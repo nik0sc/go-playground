@@ -1,3 +1,12 @@
+// Package batcher provides a timed batch middleware.
+// It will build batches until either they reach a maximum size
+// or a maximum interval elapses.
+// The batcher interacts with other code through two channels:
+// an input channel on which items are received, and an output
+// channel on which slices of items are sent.
+//
+// Inspired by https://old.reddit.com/r/golang/comments/v9m37a
+// "Looking for examples of a "batch release threshold" pattern"
 package batcher
 
 import (
@@ -21,11 +30,15 @@ func Start[T any](
 
 // Batch batches up items from the in channel and sends the batches
 // on the out channel. It will build batches until either they reach
-// the threshold size or the interval has elapsed.
+// the threshold size or the interval has elapsed. Batch exits after
+// in is closed, and it will close out as well (i.e. channel closing
+// propagates through Batch).
 //
 // If prealloc is true, the batch slice is allocated with the threshold
 // as capacity. If you expect that the timeout won't be reached frequently,
-// this could reduce unnecessary reallocations, at the expense of memory use.
+// this could reduce unnecessary reallocations. On the other hand, if the
+// timeout is actually reached frequently, setting this to false would
+// reduce unnecessary memory usage.
 func Batch[T any](
 	in <-chan T, out chan<- []T, threshold int, interval time.Duration,
 	prealloc bool,
