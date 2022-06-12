@@ -2,6 +2,7 @@ package testutils
 
 import (
 	"github.com/stretchr/testify/assert"
+	"go.lepak.sg/playground/chops"
 )
 
 type TestT interface {
@@ -19,21 +20,26 @@ type TestT interface {
 func Drain[T any](t TestT, data []T, ch <-chan T) {
 	t.Logf("draining: expecting %v", data)
 	for i, datum := range data {
-		select {
-		case el, ok := <-ch:
-			assert.Truef(t, ok, "channel closed early, expecting %v", datum)
-			assert.Equal(t, datum, el)
-		default:
-			t.Errorf("channel was empty, expecting i=%d %v", i, datum)
-			// future iterations will fail, return now
-			return
-		}
+		chops.TryRecv(ch).Match(
+			func(el T) {
+				assert.Equal(t, datum, el)
+			},
+			func() {
+				t.Errorf("channel closed early, expecting %v", datum)
+			},
+			func() {
+				t.Errorf("channel was empty, expecting i=%d %v", i, datum)
+			},
+		)
 	}
 
-	select {
-	case b, ok := <-ch:
-		assert.Falsef(t, ok, "channel should be closed, but received: %v", b)
-	default:
-		t.Error("at the end of draining, channel was empty but unclosed")
-	}
+	chops.TryRecv(ch).Match(
+		func(el T) {
+			t.Errorf("channel chould be closed, but received: %v", el)
+		},
+		func() {},
+		func() {
+			t.Error("at the end of draining, channel was empty but unclosed")
+		},
+	)
 }
