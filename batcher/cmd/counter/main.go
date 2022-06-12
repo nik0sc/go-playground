@@ -30,7 +30,6 @@ func main() {
 	out := make(chan []int, *countTo)
 
 	var wg sync.WaitGroup
-	wg.Add(1)
 
 	batcher.Start(in, out, *batchSize, *batchTime, *prealloc, &wg)
 
