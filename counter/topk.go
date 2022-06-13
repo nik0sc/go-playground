@@ -97,18 +97,20 @@ func heapk[E comparable](ctr map[E]int, k int, max bool) []Entry[E] {
 	return out
 }
 
-// TopK returns the k most frequent elements from the counter.
+// TopK returns the k most-frequent elements from the counter.
 // The returned entries are in descending order of frequency.
-// If two elements have the same count, their order in the
-// returned slice is undefined.
+// If two elements have the same count, their relative order in
+// the returned slice is undefined, however they will be after
+// all elements that occur more frequently.
 func TopK[E comparable](ctr map[E]int, k int) []Entry[E] {
 	return heapk(ctr, k, true)
 }
 
-// BottomK returns the k least frequent elements from the counter.
+// BottomK returns the k least-frequent elements from the counter.
 // The returned entries are in ascending order of frequency.
-// If two elements have the same count, their order in the
-// returned slice is undefined.
+// If two elements have the same count, their relative order in
+// the returned slice is undefined, however they will be after
+// all elements that occur less frequently.
 func BottomK[E comparable](ctr map[E]int, k int) []Entry[E] {
 	return heapk(ctr, k, false)
 }

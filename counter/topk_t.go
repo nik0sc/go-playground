@@ -5,6 +5,7 @@ import (
 )
 
 // entries2 is used to implement a max-heap.
+// Push and Pop use type parameters in their signatures.
 type entries2[E comparable] []*Entry[E]
 
 func (e entries2[_]) Len() int {
@@ -31,7 +32,9 @@ func (e *entries2[E]) Pop() *Entry[E] {
 	return x
 }
 
-// TopK2 is like TopK, but different.
+// TopK2 is like TopK, but fully generic, as it does not use
+// the standard library heap. (The standard library heap.Pop()
+// returns any instead of a concrete type.)
 func TopK2[E comparable](ctr map[E]int, k int) []Entry[E] {
 	if k == 0 {
 		return []Entry[E]{}
