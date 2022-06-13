@@ -1,68 +1,52 @@
+// Package counter counts occurrences of elements in slices
+// and also returns their k most- or least-frequent elements.
+// It also provides utility functions for working with counters.
 package counter
 
-import "container/heap"
-
-func New[S ~[]E, E comparable](list S) map[E]int {
+// Counter counts occurrences of each element of the slice
+// and returns a map of elements to their counts.
+func Counter[S ~[]E, E comparable](slice S) map[E]int {
 	c := make(map[E]int)
 
-	for _, v := range list {
+	for _, v := range slice {
 		c[v]++
 	}
 
 	return c
 }
 
-type Entry[E comparable] struct {
-	Value E
-	Count int
-}
+// fold makes a copy of a, then folds b into it using the function f.
+func fold[E comparable](a, b map[E]int, f func(a, b int) int) map[E]int {
+	sum := make(map[E]int, len(a))
 
-type Entries[E comparable] []*Entry[E]
-
-var _ heap.Interface = (*Entries[int])(nil)
-
-func (e Entries[_]) Len() int {
-	return len(e)
-}
-
-func (e Entries[_]) Less(i, j int) bool {
-	// yes, the sign is correct
-	// see container/heap PriorityQueue example
-	return e[i].Count > e[j].Count
-}
-
-func (e Entries[_]) Swap(i, j int) {
-	e[i], e[j] = e[j], e[i]
-}
-
-func (e *Entries[E]) Push(x any) {
-	in := x.(*Entry[E]) //...
-
-	*e = append(*e, in)
-}
-
-func (e *Entries[E]) Pop() any {
-	x := (*e)[len(*e)-1]
-	*e = (*e)[:len(*e)-1]
-	return x
-}
-
-func TopK[E comparable](ctr map[E]int, k int) []Entry[E] {
-	var entries Entries[E]
-
-	for el, cnt := range ctr {
-		entries = append(entries, &Entry[E]{
-			Value: el,
-			Count: cnt,
-		})
+	for el, cnt := range a {
+		sum[el] = cnt
 	}
 
-	heap.Init(&entries)
-
-	var out []Entry[E]
-	for i := 0; i < k; i++ {
-		out = append(out, *heap.Pop(&entries).(*Entry[E]))
+	for el, cnt := range b {
+		sum[el] = f(sum[el], cnt)
 	}
 
-	return out
+	return sum
+}
+
+// Add adds counter a and b together and returns a copy.
+func Add[E comparable](a, b map[E]int) map[E]int {
+	return fold(a, b, func(l, r int) int { return l + r })
+}
+
+// Subtract subtracts the counter b from a and returns a copy.
+func Subtract[E comparable](a, b map[E]int) map[E]int {
+	return fold(a, b, func(l, r int) int { return l - r })
+}
+
+// Total sums up all counts in the counter.
+func Total[E comparable](ctr map[E]int) int {
+	sum := 0
+
+	for _, cnt := range ctr {
+		sum += cnt
+	}
+
+	return sum
 }

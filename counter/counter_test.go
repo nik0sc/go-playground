@@ -3,32 +3,29 @@ package counter
 import (
 	"reflect"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
 )
 
-func TestNew(t *testing.T) {
+func TestCounter(t *testing.T) {
 	tests := []struct {
 		name string
 		list string
 		want map[byte]int
 	}{
 		{
-			"empty",
-			"",
-			map[byte]int{},
+			name: "empty",
+			want: map[byte]int{},
 		},
 		{
-			"one",
-			"a",
-			map[byte]int{
+			name: "one",
+			list: "a",
+			want: map[byte]int{
 				'a': 1,
 			},
 		},
 		{
-			"multi",
-			"abracadabra",
-			map[byte]int{
+			name: "multi",
+			list: "abracadabra",
+			want: map[byte]int{
 				'a': 5,
 				'b': 2,
 				'r': 2,
@@ -39,17 +36,9 @@ func TestNew(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := New([]byte(tt.list)); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("New() = %v, want %v", got, tt.want)
+			if got := Counter([]byte(tt.list)); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Counter() = %v, want %v", got, tt.want)
 			}
 		})
 	}
-}
-
-func TestTopK(t *testing.T) {
-	ctr := New([]byte("abracadabra"))
-	res := TopK(ctr, 1)
-	assert.Len(t, res, 1)
-	assert.Equal(t, 5, res[0].Count)
-	assert.Equal(t, byte('a'), res[0].Value)
 }
