@@ -9,20 +9,7 @@ import (
 	"golang.org/x/sync/semaphore"
 )
 
-type mbsig[S ~[]T, T, R any] func(context.Context, S, func(int, T) R, int) ([]R, error)
-
-func getmbimpl[S ~[]T, T, R any](name string) mbsig[S, T, R] {
-	switch name {
-	case "sema":
-		return MapBoundedSema[S, T, R]
-	case "pool":
-		return MapBoundedPool[S, T, R]
-	case "lf":
-		return MapBoundedPoolLockfree[S, T, R]
-	default:
-		return nil
-	}
-}
+const debug = true
 
 // MapBoundedSema maps a list of ~[]T to []R using a provided map function f.
 // It does this in parallel with a maximum of inflight workers.
@@ -50,10 +37,18 @@ func MapBoundedSema[S ~[]T, T, R any](
 		}(i, v)
 	}
 
-	// possible that the context is canceled after we started the last worker
-	// but before we acquired the entire semaphore
-	// we shouldn't exit before the workers
-	for sema.Acquire(ctx, int64(inflight)) != nil {
+	if err == nil {
+		// possible that the context is canceled after we started the last worker
+		// but before we acquired the entire semaphore
+		err = sema.Acquire(ctx, int64(inflight))
+		if err != nil {
+			for sema.Acquire(ctx, int64(inflight)) != nil {
+			}
+		}
+	} else {
+		// context is already canceled, this will eventually acquire
+		for sema.Acquire(ctx, int64(inflight)) != nil {
+		}
 	}
 
 	return
@@ -72,8 +67,14 @@ func MapBoundedPool[S ~[]T, T, R any](
 	indices := make(chan int, workers)
 	var wg sync.WaitGroup
 
+	var wstat []int
+	if debug {
+		wstat = make([]int, len(list))
+	}
+
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
+		i := i
 		go func() {
 			defer wg.Done()
 			for {
@@ -83,6 +84,9 @@ func MapBoundedPool[S ~[]T, T, R any](
 				case j, ok := <-indices:
 					if !ok {
 						return
+					}
+					if debug {
+						wstat[j] = i
 					}
 					result[j] = f(j, list[j])
 				}
@@ -102,6 +106,11 @@ producer:
 	close(indices)
 
 	wg.Wait()
+
+	if debug {
+		fmt.Println(wstat)
+	}
+
 	return
 }
 
@@ -120,6 +129,11 @@ func MapBoundedPoolLockfree[S ~[]T, T, R any](
 	var next int64
 	var wg sync.WaitGroup
 
+	var wstat []int
+	if debug {
+		wstat = make([]int, len(list))
+	}
+
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
 		i := i
@@ -135,7 +149,9 @@ func MapBoundedPoolLockfree[S ~[]T, T, R any](
 				if !atomic.CompareAndSwapInt64(&next, curr, curr+1) {
 					continue
 				}
-				fmt.Printf("w%d i%d\n", i, curr)
+				if debug {
+					wstat[int(curr)] = i
+				}
 				result[int(curr)] = f(int(curr), list[int(curr)])
 			}
 		}()
@@ -154,8 +170,12 @@ func MapBoundedPoolLockfree[S ~[]T, T, R any](
 		atomic.StoreInt64(&next, int64(len(list)))
 		err = ctx.Err()
 		// still need to wait for everyone to exit
-		wg.Wait()
+		<-notifyDone
 	case <-notifyDone:
+	}
+
+	if debug {
+		fmt.Println(wstat)
 	}
 
 	return
