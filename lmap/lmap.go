@@ -1,21 +1,18 @@
 package lmap
 
-const (
-	flagIterating = 1 << iota
-)
-
-// LinkedMap is a map combined with a linked list. It preserves insertion order and therefore
-// iteration order as well.
+// LinkedMap is a map combined with a linked list. It preserves
+// insertion order and therefore iteration order as well.
 // LinkedMap is not safe for concurrent use.
 type LinkedMap[K comparable, V any] struct {
-	m          map[K]*entryb[K, V]
+	m map[K]*entryb[K, V]
+
 	head, tail *entryb[K, V]
-	flags      int
 }
 
 type entryb[K comparable, V any] struct {
-	k          K
-	v          V
+	k K
+	v V
+
 	prev, next *entryb[K, V]
 }
 
@@ -42,11 +39,25 @@ func New[K comparable, V any]() *LinkedMap[K, V] {
 	}
 }
 
-func (l *LinkedMap[_, _]) assertNotIterating() {
-	if l.flags&flagIterating > 0 {
-		panic("about to mutate or iterate over linked list " +
-			"while already iterating over it")
+// Copy returns a deep copy of the LinkedMap.
+// Keys and values are copied. Note: Pointer-typed values
+// will still end up pointing to the same location in memory.
+func (l *LinkedMap[K, V]) Copy() *LinkedMap[K, V] {
+	lcopy := New[K, V]()
+
+	i := l.Iterator()
+
+	for i.Next() {
+		k, v := i.Entry()
+		lcopy.Set(k, v, false)
 	}
+
+	// l.Iter(func(k K, v V) bool {
+	// 	lcopy.Set(k, v, false)
+	// 	return true
+	// })
+
+	return lcopy
 }
 
 func (l *LinkedMap[K, V]) remove(e *entryb[K, V]) {
@@ -57,8 +68,6 @@ func (l *LinkedMap[K, V]) remove(e *entryb[K, V]) {
 	if l.head == nil || l.tail == nil {
 		panic("nil head or tail")
 	}
-
-	l.assertNotIterating()
 
 	if e.prev != nil {
 		e.prev.next = e.next
@@ -84,8 +93,6 @@ func (l *LinkedMap[K, V]) push(e *entryb[K, V]) {
 		panic("nil entry")
 	}
 
-	l.assertNotIterating()
-
 	if l.head == nil && l.tail == nil {
 		l.head, l.tail = e, e
 		return
@@ -98,8 +105,9 @@ func (l *LinkedMap[K, V]) push(e *entryb[K, V]) {
 	l.tail = e
 }
 
-// Get behaves like the map access `v, ok := l[k]`. If bump is true and k is in the map,
-// k is moved to the tail of the list, as if it were removed and added back to the map.
+// Get behaves like the map access `v, ok := l[k]`.
+// If bump is true and k is in the map, k is moved to the tail
+// of the list, as if it were removed and added back to the map.
 func (l *LinkedMap[K, V]) Get(k K, bump bool) (v V, ok bool) {
 	e, ok := l.m[k]
 	if !ok {
@@ -114,12 +122,11 @@ func (l *LinkedMap[K, V]) Get(k K, bump bool) (v V, ok bool) {
 	return e.v, true
 }
 
-// Set behaves like the map set `l[k] = v`. If bumpOnExist is true and k is in the map,
-// k is moved to the tail of the list, as if it were removed and added back into the map.
-// Otherwise, if k is not in the map, it is appended to the tail of the list.
+// Set behaves like the map set `l[k] = v`. If bumpOnExist is true
+// and k is in the map, k is moved to the tail of the list,
+// as if it were removed and added back into the map. Otherwise,
+// if k is not in the map, it is appended to the tail of the list.
 func (l *LinkedMap[K, V]) Set(k K, v V, bumpOnExist bool) {
-	l.assertNotIterating()
-
 	e, exist := l.m[k]
 	if exist {
 		if e.k != k {
@@ -143,7 +150,8 @@ func (l *LinkedMap[K, V]) Set(k K, v V, bumpOnExist bool) {
 	}
 }
 
-// Delete behaves like `delete(l, k)`. If the key was not found, ok will be false.
+// Delete behaves like `delete(l, k)`.
+// If the key was not found, ok will be false.
 func (l *LinkedMap[K, _]) Delete(k K) (ok bool) {
 	e, ok := l.m[k]
 	if !ok {
@@ -156,18 +164,16 @@ func (l *LinkedMap[K, _]) Delete(k K) (ok bool) {
 	return
 }
 
-// Iter allows ordered iteration over the map in the same vein as `for k, v := range l {}`.
-// The function f is called for every key-value pair in order. If f returns false at any
-// iteration, the iteration process is stopped early.
+// ForEach allows ordered iteration over the map as with
+// `for k, v := range l {}`. The function f is called for every
+// key-value pair in order. If f returns false at any iteration,
+// the iteration process is stopped early.
 //
-// The result of modifying the map while iterating over the map is undefined.
-func (l *LinkedMap[K, V]) Iter(f func(k K, v V) bool) {
+// The result of modifying the map while iterating over it is undefined.
+func (l *LinkedMap[K, V]) ForEach(f func(k K, v V) bool) {
 	if l.head == nil {
 		return
 	}
-
-	l.assertNotIterating()
-	l.flags |= flagIterating
 
 	hare := l.head.next
 
@@ -189,8 +195,6 @@ func (l *LinkedMap[K, V]) Iter(f func(k K, v V) bool) {
 			hare = nil
 		}
 	}
-
-	l.flags &^= flagIterating
 }
 
 // Len behaves like `len(l)`. This is a constant-time operation.
@@ -198,8 +202,9 @@ func (l *LinkedMap[_, _]) Len() int {
 	return len(l.m)
 }
 
-// Head returns the head element of the linked list. If pop is true, the head element
-// is also removed from the map and list. If ok is false, no element was found.
+// Head returns the head element of the linked list. If pop is true,
+// the head element is also removed from the map and list.
+// If ok is false, no element was found.
 func (l *LinkedMap[K, V]) Head(pop bool) (k K, v V, ok bool) {
 	if l.head == nil {
 		return
@@ -215,8 +220,9 @@ func (l *LinkedMap[K, V]) Head(pop bool) (k K, v V, ok bool) {
 	return
 }
 
-// Tail returns the tail element of the linked list. If pop is true, the tail element
-// is also removed from the map and list. If ok is false, no element was found.
+// Tail returns the tail element of the linked list. If pop is true,
+// the tail element is also removed from the map and list.
+// If ok is false, no element was found.
 func (l *LinkedMap[K, V]) Tail(pop bool) (k K, v V, ok bool) {
 	if l.tail == nil {
 		return
@@ -232,8 +238,8 @@ func (l *LinkedMap[K, V]) Tail(pop bool) (k K, v V, ok bool) {
 	return
 }
 
-// Next returns the key and value of element after k in the linked map.
-// If k is not in the linked map, or k is already the last element,
+// Next returns the key and value of the element after k.
+// If k is not in the map, or k is already the last element,
 // ok is false, and kn and vn are their zero values.
 // This may also be used to iterate over the map.
 func (l *LinkedMap[K, V]) Next(k K) (kn K, vn V, ok bool) {
@@ -246,9 +252,9 @@ func (l *LinkedMap[K, V]) Next(k K) (kn K, vn V, ok bool) {
 	return e.next.k, e.next.v, true
 }
 
-// Next returns the key and value of element before k in the linked map.
-// If k is not in the linked map, or k is already the first element,
-// ok is false, and kn and vn are their zero values.
+// Prev returns the key and value of the element before k.
+// If k is not in the map, or k is already the first element,
+// ok is false, and kp and vp are their zero values.
 func (l *LinkedMap[K, V]) Prev(k K) (kp K, vp V, ok bool) {
 	e, ok := l.m[k]
 	if !ok || e.prev == nil {
@@ -259,19 +265,33 @@ func (l *LinkedMap[K, V]) Prev(k K) (kp K, vp V, ok bool) {
 	return e.prev.k, e.prev.v, true
 }
 
+// Iterator returns an iterator object starting at the head
+// of the LinkedMap. The usual idiom for using an iterator is:
+//
+//	i := l.Iterator()
+//	for i.Next() {
+//		k, v := i.Entry()
+//		// do stuff with k and v ...
+//	}
+//
+// The iterator may be abandoned at any time. Just like
+// LinkedMap, it is not safe for concurrent use, although
+// multiple goroutines each holding their own iterator
+// may independently iterate over the LinkedMap.
 func (l *LinkedMap[K, V]) Iterator() Iterator[K, V] {
 	return Iterator[K, V]{
 		head: l.head,
 	}
 }
 
+// Iterator is a map iterator object. See LinkedMap.Iterator.
 type Iterator[K comparable, V any] struct {
 	head, cur, hare *entryb[K, V]
 }
 
 // Next advances the iterator and returns whether there is anything
-// to be read with Item.
-// Next must be called before Item.
+// to be read with Entry.
+// Next must be called before Entry.
 func (i *Iterator[K, V]) Next() bool {
 	if i.cur == nil {
 		if i.head == nil {
@@ -299,7 +319,7 @@ func (i *Iterator[K, V]) Next() bool {
 	return true
 }
 
-// Item returns the current key and value of the iterator.
-func (i *Iterator[K, V]) Item() (k K, v V) {
+// Entry returns the current key and value of the iterator.
+func (i *Iterator[K, V]) Entry() (k K, v V) {
 	return i.cur.k, i.cur.v
 }
