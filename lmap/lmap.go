@@ -1,3 +1,6 @@
+// Package lmap provides an implementation of a linked map.
+// It is the generic version of github.com/nik0sc/lmap,
+// with some improvements.
 package lmap
 
 // LinkedMap is a map combined with a linked list. It preserves
@@ -51,11 +54,6 @@ func (l *LinkedMap[K, V]) Copy() *LinkedMap[K, V] {
 		k, v := i.Entry()
 		lcopy.Set(k, v, false)
 	}
-
-	// l.Iter(func(k K, v V) bool {
-	// 	lcopy.Set(k, v, false)
-	// 	return true
-	// })
 
 	return lcopy
 }
@@ -171,6 +169,7 @@ func (l *LinkedMap[K, _]) Delete(k K) (ok bool) {
 //
 // The result of modifying the map while iterating over it is undefined.
 func (l *LinkedMap[K, V]) ForEach(f func(k K, v V) bool) {
+	// consider making this a thin wrapper around Iterator?
 	if l.head == nil {
 		return
 	}
