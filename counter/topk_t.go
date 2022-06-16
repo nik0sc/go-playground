@@ -32,10 +32,10 @@ func (e *entries2[E]) Pop() *Entry[E] {
 	return x
 }
 
-// TopK2 is like TopK, but fully generic, as it does not use
+// TopKAlt is like TopK, but fully generic, as it does not use
 // the standard library heap. (The standard library heap.Pop()
 // returns any instead of a concrete type.)
-func TopK2[E comparable](ctr map[E]int, k int) []Entry[E] {
+func TopKAlt[E comparable](ctr map[E]int, k int) []Entry[E] {
 	if k == 0 {
 		return []Entry[E]{}
 	} else if k > len(ctr) {

@@ -61,8 +61,11 @@ func heapk[E comparable](ctr map[E]int, k int, max bool) []Entry[E] {
 	if k == 0 {
 		return []Entry[E]{}
 	} else if k > len(ctr) {
+		// alternative: return len(ctr)-k of zero Entries
+		// at the end of the slice?
 		panic("k is larger than number of elements in ctr")
 	} else if k < 0 {
+		// alternative: take uint? or return nil?
 		panic("k is negative")
 	}
 

@@ -218,7 +218,7 @@ func TestTopK2(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := TopK2(tt.args.ctr, tt.args.k); !reflect.DeepEqual(got, tt.want) {
+			if got := TopKAlt(tt.args.ctr, tt.args.k); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("TopK() = %v, want %v", got, tt.want)
 			}
 		})
