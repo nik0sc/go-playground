@@ -1,7 +1,11 @@
 package chops
 
 import (
+	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"go.uber.org/goleak"
 )
 
 func TestIsClosed(t *testing.T) {
@@ -126,4 +130,60 @@ func TestTrySend(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWait_ZeroWg(t *testing.T) {
+	var wg sync.WaitGroup
+
+	_, ok := <-Wait(&wg)
+	assert.False(t, ok)
+
+	goleak.VerifyNone(t)
+}
+
+func TestWait_Block(t *testing.T) {
+	// to be run with -race
+	var wg sync.WaitGroup
+	exited := false
+
+	wg.Add(1)
+	go func() {
+		exited = true
+		wg.Done()
+	}()
+
+	_, ok := <-Wait(&wg)
+	assert.True(t, exited)
+	assert.False(t, ok)
+
+	goleak.VerifyNone(t)
+}
+
+func TestWait_Reuse(t *testing.T) {
+	var wg sync.WaitGroup
+	var exit1, exit2 bool
+
+	wg.Add(1)
+	ch1 := Wait(&wg)
+	go func() {
+		exit1 = true
+		wg.Done()
+	}()
+
+	_, ok := <-ch1
+	assert.True(t, exit1)
+	assert.False(t, ok)
+
+	wg.Add(1)
+	ch2 := Wait(&wg)
+	go func() {
+		exit2 = true
+		wg.Done()
+	}()
+
+	_, ok = <-ch2
+	assert.True(t, exit2)
+	assert.False(t, ok)
+
+	goleak.VerifyNone(t)
 }

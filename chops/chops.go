@@ -7,6 +7,7 @@ package chops
 import (
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"unsafe"
 )
@@ -171,3 +172,32 @@ func IsClosed[T any](ch chan T) bool {
 }
 
 // RecvOr, SendOr are pointless with generics
+
+// Wait returns a channel that is closed once wg's counter is 0.
+// This allows WaitGroups to participate in selects, like so:
+//
+//	var wg sync.WaitGroup
+//	wg.Add(n)
+//
+//	select {
+//	case <-ctx.Done(): // for example
+//		...
+//	case <-chops.Wait(&wg):
+//		...
+//	}
+//
+// This is a one-shot event. If wg is reused after its counter
+// is decremented to 0, the channel does not reset or reopen
+// (this is impossible under channel semantics, anyway).
+//
+// Wait creates a goroutine that exits when the WaitGroup is Done.
+func Wait(wg *sync.WaitGroup) <-chan struct{} {
+	ch := make(chan struct{})
+
+	go func() {
+		wg.Wait()
+		close(ch)
+	}()
+
+	return ch
+}
