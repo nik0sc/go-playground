@@ -1,3 +1,9 @@
+// Package parallel provides higher-order functions that run in parallel.
+// Maximum concurrency may be restricted for all the functions.
+//
+// Context cancellation: If the input context is canceled, MapBounded* will
+// immediately stop mapping any new items, wait for workers running to exit,
+// then return the context error.
 package parallel
 
 import (
@@ -6,6 +12,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"go.lepak.sg/playground/chops"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -13,10 +21,6 @@ const debug = true
 
 // MapBoundedSema maps a list of ~[]T to []R using a provided map function f.
 // It does this in parallel with a maximum of inflight workers.
-//
-// Context cancellation: If the context is canceled, MapBounded* will
-// immediately stop mapping any new items, wait for workers running to exit,
-// then return the context error.
 func MapBoundedSema[S ~[]T, T, R any](
 	ctx context.Context, list S, f func(int, T) R, inflight int,
 ) (result []R, err error) {
@@ -38,17 +42,17 @@ func MapBoundedSema[S ~[]T, T, R any](
 	}
 
 	if err == nil {
-		// possible that the context is canceled after we started the last worker
-		// but before we acquired the entire semaphore
+		// possible that the context is canceled after we started
+		// the last workerbut before we acquired the entire semaphore
 		err = sema.Acquire(ctx, int64(inflight))
-		if err != nil {
-			for sema.Acquire(ctx, int64(inflight)) != nil {
-			}
+		if err == nil {
+			// context is not canceled, this is the happy path
+			return
 		}
-	} else {
-		// context is already canceled, this will eventually acquire
-		for sema.Acquire(ctx, int64(inflight)) != nil {
-		}
+	}
+
+	// context is already canceled, this will eventually acquire
+	for sema.Acquire(ctx, int64(inflight)) != nil {
 	}
 
 	return
@@ -56,10 +60,6 @@ func MapBoundedSema[S ~[]T, T, R any](
 
 // MapBoundedPool maps a list of ~[]T to []R using a provided map function f.
 // It does this in parallel with a fixed-size pool of workers.
-//
-// Context cancellation: If the context is canceled, MapBounded* will
-// immediately stop mapping any new items, wait for workers running to exit,
-// then return the context error.
 func MapBoundedPool[S ~[]T, T, R any](
 	ctx context.Context, list S, f func(int, T) R, workers int,
 ) (result []R, err error) {
@@ -118,10 +118,6 @@ producer:
 // provided map function f.
 // It does this in parallel with a fixed-size pool of workers.
 // No channels or locks are involved in the dispatch process.
-//
-// Context cancellation: If the context is canceled, MapBounded* will
-// immediately stop mapping any new items, wait for workers running to exit,
-// then return the context error.
 func MapBoundedPoolLockfree[S ~[]T, T, R any](
 	ctx context.Context, list S, f func(int, T) R, workers int,
 ) (result []R, err error) {
@@ -141,38 +137,121 @@ func MapBoundedPoolLockfree[S ~[]T, T, R any](
 			defer wg.Done()
 
 			for {
-				curr := atomic.LoadInt64(&next)
-				if curr == int64(len(list)) {
+				currI64 := atomic.LoadInt64(&next)
+				if currI64 == int64(len(list)) {
 					return
 				}
 
-				if !atomic.CompareAndSwapInt64(&next, curr, curr+1) {
+				if !atomic.CompareAndSwapInt64(&next, currI64, currI64+1) {
 					continue
 				}
+
+				curr := int(currI64)
 				if debug {
-					wstat[int(curr)] = i
+					wstat[curr] = i
 				}
-				result[int(curr)] = f(int(curr), list[int(curr)])
+				result[curr] = f(curr, list[curr])
 			}
 		}()
 	}
-
-	// a little clunky, but still better than spinning on
-	// atomic.LoadInt64(&next) == int64(len(list))
-	notifyDone := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(notifyDone)
-	}()
 
 	select {
 	case <-ctx.Done():
 		atomic.StoreInt64(&next, int64(len(list)))
 		err = ctx.Err()
 		// still need to wait for everyone to exit
-		<-notifyDone
-	case <-notifyDone:
+		wg.Wait()
+	case <-chops.Wait(&wg):
 	}
+
+	if debug {
+		fmt.Println(wstat)
+	}
+
+	return
+}
+
+// MapBoundedErrgroup maps a list of ~[]T to []R
+// using a provided map function f.
+// It does this in parallel with a maximum of inflight workers.
+// An errgroup.Group is used to coordinate them.
+func MapBoundedErrgroup[S ~[]T, T, R any](
+	ctx context.Context, list S, f func(int, T) R, workers int,
+) (result []R, err error) {
+	result = make([]R, len(list))
+
+	g, ctx := errgroup.WithContext(ctx)
+
+	g.SetLimit(workers)
+
+	for i := range list {
+		i := i
+		if ctx.Err() != nil {
+			break
+		}
+		g.Go(func() error {
+			result[i] = f(i, list[i])
+			return ctx.Err()
+		})
+	}
+
+	// err = g.Wait()
+	// if err == nil {
+	// 	return result, nil
+	// } else {
+	// 	return nil, err
+	// }
+	return result, g.Wait()
+}
+
+// MapBoundedPoolErrgroup maps a list of ~[]T to []R
+// using a provided map function f.
+// It does this in parallel with a fixed-size pool of workers.
+// An errgroup.Group is used to coordinate them.
+func MapBoundedPoolErrgroup[S ~[]T, T, R any](
+	ctx context.Context, list S, f func(int, T) R, workers int,
+) (result []R, err error) {
+	result = make([]R, len(list))
+	indices := make(chan int)
+
+	var wstat []int
+	if debug {
+		wstat = make([]int, len(list))
+	}
+
+	g, ctx := errgroup.WithContext(ctx)
+
+	for i := 0; i < workers; i++ {
+		i := i
+		g.Go(func() error {
+			for {
+				select {
+				case j, ok := <-indices:
+					if !ok {
+						return nil
+					}
+					if debug {
+						wstat[j] = i
+					}
+					result[j] = f(j, list[j])
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+		})
+	}
+
+producer:
+	for i := range list {
+		select {
+		case <-ctx.Done():
+			break producer
+		case indices <- i:
+		}
+	}
+	close(indices)
+
+	err = g.Wait()
 
 	if debug {
 		fmt.Println(wstat)

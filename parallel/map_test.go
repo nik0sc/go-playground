@@ -9,6 +9,10 @@ import (
 	"go.uber.org/goleak"
 )
 
+// TODO:
+//  - what happens with non-empty list but zero concurrency?
+//  - what happens with concurrency > length of list?
+
 type impl[T, R any] struct {
 	name  string
 	fname string
@@ -31,6 +35,16 @@ func getimpls[T, R any]() []impl[T, R] {
 			name:  "PoolLockfree",
 			fname: "MapBoundedPoolLockfree",
 			f:     MapBoundedPoolLockfree[[]T, T, R],
+		},
+		{
+			name:  "Errgroup",
+			fname: "MapBoundedErrgroup",
+			f:     MapBoundedErrgroup[[]T, T, R],
+		},
+		{
+			name:  "PoolErrgroup",
+			fname: "MapBoundedPoolErrgroup",
+			f:     MapBoundedPoolErrgroup[[]T, T, R],
 		},
 	}
 }
@@ -137,6 +151,8 @@ func TestMapBounded_Cancellation(t *testing.T) {
 
 			result, err := impl.f(ctx, in, f, workers)
 
+			// This can be flaky - it's possible that the context canceled
+			//
 			assert.ErrorIs(t, err, context.Canceled)
 
 			t.Logf("result=%v", result)
