@@ -152,7 +152,8 @@ func TestMapBounded_Cancellation(t *testing.T) {
 			result, err := impl.f(ctx, in, f, workers)
 
 			// This can be flaky - it's possible that the context canceled
-			//
+			// but it was observed after the last call to ctx.Err
+			// in the function under test
 			assert.ErrorIs(t, err, context.Canceled)
 
 			t.Logf("result=%v", result)
