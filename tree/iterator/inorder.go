@@ -32,6 +32,10 @@ func NewInOrder[T constraints.Ordered](root *tree.Node[T]) *InOrder[T] {
 // Next returns true if there is a next node to yield with Key.
 // Next must always be called before Key.
 func (i *InOrder[T]) Next() bool {
+	if i == nil {
+		return false
+	}
+
 	// https://www.cs.odu.edu/~zeil/cs361/latest/Public/treetraversal/index.html
 	if i.at == nil {
 		// So, if Next returned false, calling Key will cause a nil pointer dereference,

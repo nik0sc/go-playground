@@ -14,6 +14,9 @@ import (
 // The zero Tree may be used immediately. Tree should not be passed
 // around as a value (ie. just use &Tree{} when creating one).
 //
+// This tree implementation does not support removal. It is also not
+// self-balancing.
+//
 // Invariants:
 //  - At any node N in the tree, all node keys in the subtree rooted at N.Left
 //    will be less than N.Key
@@ -25,6 +28,7 @@ type Tree[T constraints.Ordered] struct {
 	// the tree is rooted here.
 	// don't return nodes directly - client could mutate data or children!
 	root *tree.Node[T]
+	// I lied - after the first insertion, Tree may be passed around by value
 }
 
 // Instead of using constraints.Ordered, I also considered using
@@ -122,6 +126,8 @@ func (t *Tree[T]) InOrder(f func(k T) bool) {
 }
 
 func (t *Tree[T]) visitInOrder(n *tree.Node[T], f func(k T) bool) bool {
+	// Classic recursive in-order iteration.
+	// Compare this to iterator.InOrder which is not recursive
 	if n.Left != nil {
 		if !t.visitInOrder(n.Left, f) {
 			return false
@@ -144,21 +150,21 @@ func (t *Tree[T]) visitInOrder(n *tree.Node[T], f func(k T) bool) bool {
 // InOrderCoroutine starts coroutine-style in-order iteration.
 // The usage is as follows:
 //
-//	keys, stop := t.InOrderCoroutine()
-//	for k := range keys {
+//	co := t.InOrderCoroutine()
+//	for k := range co.Items() {
 //		... do stuff with k ...
 //		if k meets some stopping condition {
-//			close(stop)
+//			co.Stop()
 //		}
 //	}
 //
 // Note: InOrderCoroutine starts a goroutine, which exits when either
-// the chan struct{} is closed or the iteration is finished.
+// Stop() is called or the iteration is finished.
 // If you follow the usage above, the goroutine will not live beyond
 // the end of the for-range loop.
-func (t *Tree[T]) InOrderCoroutine() (<-chan T, chan<- struct{}) {
-	// ?? Why is the explicit interface cast needed ??
-	return chops.CoIterate(chops.Iterator[T](t.InOrderIterator()))
+func (t *Tree[T]) InOrderCoroutine() chops.CoIterator[T] {
+	// ?? Why can't T be inferred for CoIterate ??
+	return chops.CoIterate[T](t.InOrderIterator())
 }
 
 // InOrderIterator returns an iterator object that yields
