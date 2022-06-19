@@ -42,10 +42,10 @@ func (c CoIterator[T]) Stop() {
 //
 // If you might pass a typed nil pointer into CoIterate,
 // make sure your underlying type's methods can handle
-// being called with nil.
+// being called with a nil receiver.
 //
 // Note: CoIterate starts a goroutine, which exits when either
-// the chan struct{} is closed or the iteration is finished.
+// Stop() is called or the iteration is finished.
 // If you follow the usage above, the goroutine will not live beyond
 // the end of the for-range loop.
 func CoIterate[T any](iterator Iterator[T]) CoIterator[T] {
