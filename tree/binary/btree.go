@@ -47,22 +47,35 @@ type Tree[T constraints.Ordered] struct {
 
 // Contains searches for k in the tree and returns true if it was found.
 func (t *Tree[T]) Contains(k T) bool {
-	n := t.root
+	parent, cmp := t.insertWhere(k)
 
+	return parent != nil && cmp == tree.Equal
+}
+
+// insertWhere takes a key and returns where to insert it.
+// If cmp is tree.Less, k should be inserted on parent's left.
+// If cmp is tree.Greater, k should be inserted on parent's right.
+// In both these cases, the left/right pointer of parent will be nil.
+// If cmp is tree.Equal, parent's key is k.
+// If t.root is nil, parent is nil.
+func (t *Tree[T]) insertWhere(k T) (parent *tree.Node[T], cmp tree.Order) {
+	n := t.root
 	for n != nil {
-		switch tree.Compare(k, n.Key) {
+		cmp = tree.Compare(k, n.Key)
+		switch cmp {
 		case tree.Less:
-			n = n.Left
+			n, parent = n.Left, n
 		case tree.Greater:
-			n = n.Right
+			n, parent = n.Right, n
 		case tree.Equal:
-			return true
+			n, parent = nil, n
+			// setting n to nil breaks the for loop
 		default:
 			panic("unreachable")
 		}
 	}
 
-	return false
+	return
 }
 
 // Less returns the largest key in the tree
@@ -79,26 +92,11 @@ func (t *Tree[T]) Less(k T) (p T, ok bool) {
 		return
 	}
 
-	var cmp tree.Order
-	n, parent := t.root, (*tree.Node[T])(nil)
-	for n != nil {
-		cmp = tree.Compare(k, n.Key)
-		switch cmp {
-		case tree.Less:
-			n, parent = n.Left, n
-		case tree.Greater:
-			n, parent = n.Right, n
-		case tree.Equal:
-			n, parent = nil, n
-			// setting n to nil breaks the for loop
-		default:
-			panic("unreachable")
-		}
-	}
+	// currently, less is where we would be inserted
+	// now go back up the tree to find the previous node,
+	// updating less along the way
+	less, cmp := t.insertWhere(k)
 
-	// parent is where we would be inserted
-	// now go back up the tree to find the previous node
-	less := parent
 	switch cmp {
 	case tree.Less, tree.Equal:
 		if less.Left != nil {
@@ -141,37 +139,25 @@ func (t *Tree[T]) Insert(k T) bool {
 		return true
 	}
 
-	n, p := t.root, (*tree.Node[T])(nil)
-	var cmp tree.Order
-
-	for n != nil {
-		cmp = tree.Compare(k, n.Key)
-		switch cmp {
-		case tree.Less:
-			n, p = n.Left, n
-		case tree.Greater:
-			n, p = n.Right, n
-		case tree.Equal:
-			return false
-		default:
-			panic("unreachable")
-		}
+	parent, cmp := t.insertWhere(k)
+	if cmp == tree.Equal {
+		return false
 	}
 
 	newnode := tree.NodeOf(k)
-	newnode.Parent = p
+	newnode.Parent = parent
 
 	switch cmp {
 	case tree.Less:
-		if p.Left != nil {
+		if parent.Left != nil {
 			panic("impossible")
 		}
-		p.Left = newnode
+		parent.Left = newnode
 	case tree.Greater:
-		if p.Right != nil {
+		if parent.Right != nil {
 			panic("impossible")
 		}
-		p.Right = newnode
+		parent.Right = newnode
 	default:
 		panic("unreachable")
 	}
