@@ -1,6 +1,9 @@
 package binary
 
 import (
+	"fmt"
+	"strings"
+
 	"go.lepak.sg/playground/chops"
 	"go.lepak.sg/playground/tree"
 	"go.lepak.sg/playground/tree/iterator"
@@ -62,15 +65,67 @@ func (t *Tree[T]) Contains(k T) bool {
 	return false
 }
 
-// Less ...
-func (t *Tree[T]) Less(k T) T {
-	// n := t.root
+// Less returns the largest key in the tree
+// that is less than k.
+// If there is no key in the tree less than k,
+// p is the zero T and ok is false.
+func (t *Tree[T]) Less(k T) (p T, ok bool) {
+	// Find the node where k would be inserted to,
+	// or the node whose key = k,
+	// then find the previous node.
 
-	// for n != nil {
+	// https://courses.csail.mit.edu/6.006/fall11/rec/rec05.pdf
+	if t.root == nil {
+		return
+	}
 
-	// }
+	var c tree.Order
+	n, parent := t.root, (*tree.Node[T])(nil)
+	for n != nil {
+		c = tree.Compare(k, n.Key)
+		switch c {
+		case tree.Less:
+			n, parent = n.Left, n
+		case tree.Greater:
+			n, parent = n.Right, n
+		case tree.Equal:
+			n, parent = nil, n
+			// setting n to nil breaks the for loop
+		default:
+			panic("unreachable")
+		}
+	}
 
-	panic("todo")
+	// parent is where we would be inserted...
+	less := parent
+	switch c {
+	case tree.Less, tree.Equal:
+		if less.Left != nil {
+			// will be the max in the left subtree
+			less = less.Left
+
+			for less.Right != nil {
+				less = less.Right
+			}
+		} else {
+			// this may fail
+			var child *tree.Node[T]
+			for less != nil {
+				less, child = less.Parent, less
+				if less != nil && less.Right == child {
+					return less.Key, true
+				}
+			}
+
+			return
+		}
+	case tree.Greater:
+		// do nothing
+	default:
+		panic("unreachable")
+	}
+
+	return less.Key, true
 }
 
 // Insert inserts k into the binary tree.
@@ -171,4 +226,59 @@ func (t *Tree[T]) InOrderCoroutine() chops.CoIterator[T] {
 // keys from the tree in-order.
 func (t *Tree[T]) InOrderIterator() *iterator.InOrder[T] {
 	return iterator.NewInOrder(t.root)
+}
+
+// String returns a string representation of the tree.
+// A complete binary tree with height 2 would look like this:
+//	4
+//	├─L─2
+//	│   ├─L─1
+//	│   └─R─3
+//	└─R─6
+//	    ├─L─5
+//	    └─R─7
+func (t *Tree[T]) String() string {
+	var sb strings.Builder
+
+	if t.root == nil {
+		return ""
+	}
+
+	printvisit(&sb, t.root, "", "", true, false)
+
+	return sb.String()
+}
+
+const (
+	treeMidBranch    = "├─"
+	treeLastBranch   = "└─"
+	treeLeftBranch   = "L─"
+	treeRightBranch  = "R─"
+	treeMidContinue  = "│   "
+	treeLastContinue = "    "
+)
+
+func printvisit[T constraints.Ordered](
+	sb *strings.Builder, n *tree.Node[T], prefix, branch string, initial, isMid bool) {
+	if !initial {
+		sb.WriteString(prefix)
+		if isMid {
+			prefix += treeMidContinue
+			sb.WriteString(treeMidBranch)
+		} else {
+			prefix += treeLastContinue
+			sb.WriteString(treeLastBranch)
+		}
+		sb.WriteString(branch)
+	}
+	sb.WriteString(fmt.Sprint(n.Key))
+	sb.WriteRune('\n')
+
+	if n.Left != nil {
+		printvisit(sb, n.Left, prefix, treeLeftBranch, false, n.Right != nil)
+	}
+
+	if n.Right != nil {
+		printvisit(sb, n.Right, prefix, treeRightBranch, false, false)
+	}
 }
