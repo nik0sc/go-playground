@@ -131,6 +131,59 @@ func (t *Tree[T]) Less(k T) (p T, ok bool) {
 	return less.Key, true
 }
 
+// Greater returns the smallest key in the tree
+// that is greater than k.
+// If there is no key in the tree greater than k,
+// p is the zero T and ok is false.
+func (t *Tree[T]) Greater(k T) (p T, ok bool) {
+	// Find the node where k would be inserted to,
+	// or the node whose key = k,
+	// then find the next node.
+
+	// https://courses.csail.mit.edu/6.006/fall11/rec/rec05.pdf
+	if t.root == nil {
+		return
+	}
+
+	// currently, greater is where we would be inserted
+	// now go back up the tree to find the next node,
+	// updating greater along the way
+	greater, cmp := t.insertWhere(k)
+
+	switch cmp {
+	case tree.Greater, tree.Equal:
+		if greater.Right != nil {
+			// will be the min in the right subtree
+			greater = greater.Right
+
+			for greater.Left != nil {
+				greater = greater.Left
+			}
+		} else {
+			// this may fail
+			// go up the parent and the first left link
+			// we pass over, leads to the next node
+			var child *tree.Node[T]
+			for greater != nil {
+				greater, child = greater.Parent, greater
+				if greater != nil && greater.Left == child {
+					return greater.Key, true
+				}
+			}
+
+			return
+		}
+	case tree.Less:
+		// do nothing
+		// if we would be inserted to the left of some node,
+		// that node is the next node
+	default:
+		panic("unreachable")
+	}
+
+	return greater.Key, true
+}
+
 // Insert inserts k into the binary tree.
 // If k is already in the tree, Insert returns false.
 func (t *Tree[T]) Insert(k T) bool {
@@ -186,6 +239,30 @@ func (t *Tree[T]) visitInOrder(n *tree.Node[T], f func(k T) bool) bool {
 
 	if n.Right != nil {
 		if !t.visitInOrder(n.Right, f) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (t *Tree[T]) PreOrder(f func(k T) bool) {
+	t.visitPreOrder(t.root, f)
+}
+
+func (t *Tree[T]) visitPreOrder(n *tree.Node[T], f func(k T) bool) bool {
+	if !f(n.Key) {
+		return false
+	}
+
+	if n.Left != nil {
+		if !t.visitPreOrder(n.Left, f) {
+			return false
+		}
+	}
+
+	if n.Right != nil {
+		if !t.visitPreOrder(n.Right, f) {
 			return false
 		}
 	}
