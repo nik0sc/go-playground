@@ -79,11 +79,11 @@ func (t *Tree[T]) Less(k T) (p T, ok bool) {
 		return
 	}
 
-	var c tree.Order
+	var cmp tree.Order
 	n, parent := t.root, (*tree.Node[T])(nil)
 	for n != nil {
-		c = tree.Compare(k, n.Key)
-		switch c {
+		cmp = tree.Compare(k, n.Key)
+		switch cmp {
 		case tree.Less:
 			n, parent = n.Left, n
 		case tree.Greater:
@@ -96,9 +96,10 @@ func (t *Tree[T]) Less(k T) (p T, ok bool) {
 		}
 	}
 
-	// parent is where we would be inserted...
+	// parent is where we would be inserted
+	// now go back up the tree to find the previous node
 	less := parent
-	switch c {
+	switch cmp {
 	case tree.Less, tree.Equal:
 		if less.Left != nil {
 			// will be the max in the left subtree
@@ -109,6 +110,8 @@ func (t *Tree[T]) Less(k T) (p T, ok bool) {
 			}
 		} else {
 			// this may fail
+			// go up the parent and the first right link
+			// we pass over, leads to the previous node
 			var child *tree.Node[T]
 			for less != nil {
 				less, child = less.Parent, less
@@ -121,6 +124,8 @@ func (t *Tree[T]) Less(k T) (p T, ok bool) {
 		}
 	case tree.Greater:
 		// do nothing
+		// if we would be inserted to the right of some node,
+		// that node is the previous node
 	default:
 		panic("unreachable")
 	}
