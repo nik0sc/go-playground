@@ -1,6 +1,7 @@
 package chops
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -93,4 +94,38 @@ func TestCoIterate(t *testing.T) {
 			goleak.VerifyNone(t)
 		})
 	}
+}
+
+func TestCoIterate_Concurrent(t *testing.T) {
+	sl := &sliter{
+		s: make([]int, 100),
+		i: -1,
+	}
+	for i := range sl.s {
+		sl.s[i] = i + 1
+	}
+	co := CoIterate[int](sl)
+
+	barrier := make(chan struct{})
+	var once sync.Once
+	var wg sync.WaitGroup
+	wg.Add(10)
+	for i := 0; i < 10; i++ {
+		go func() {
+			defer wg.Done()
+			<-barrier
+			for j := range co.Items() {
+				if j > 50 {
+					once.Do(co.Stop)
+				}
+			}
+		}()
+	}
+
+	close(barrier)
+	wg.Wait()
+
+	t.Logf("next index of iterator=%d", sl.i)
+
+	goleak.VerifyNone(t)
 }

@@ -23,6 +23,20 @@ func (c CoIterator[T]) Items() <-chan T {
 
 // Stop stops the iteration. This must not be called more than once.
 // If the Items channel is closed, this doesn't need to be called.
+//
+// If you need to stop from multiple goroutines, use a sync.Once:
+//
+//	var once sync.Once
+//	co := CoIterate[T](...)
+//	for i := 0; i < 10; i++ {
+//		go func() {
+//			for item := range co.Items() {
+//				if item meets some stopping condition {
+//					once.Do(co.Stop)
+//				}
+//			}
+//		}()
+//	}
 func (c CoIterator[T]) Stop() {
 	close(c.stop)
 }

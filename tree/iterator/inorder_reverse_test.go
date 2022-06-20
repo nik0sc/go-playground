@@ -7,52 +7,18 @@ import (
 	"go.lepak.sg/playground/tree"
 )
 
-func newCompleteTree_2Tall() *tree.Node[int] {
-	t := &tree.Node[int]{
-		Left: &tree.Node[int]{
-			Left: &tree.Node[int]{
-				Key: 1,
-			},
-			Key: 2,
-			Right: &tree.Node[int]{
-				Key: 3,
-			},
-		},
-		Key: 4,
-		Right: &tree.Node[int]{
-			Left: &tree.Node[int]{
-				Key: 5,
-			},
-			Key: 6,
-			Right: &tree.Node[int]{
-				Key: 7,
-			},
-		},
-	}
-
-	t.Left.Left.Parent = t.Left
-	t.Left.Right.Parent = t.Left
-	t.Left.Parent = t
-
-	t.Right.Left.Parent = t.Right
-	t.Right.Right.Parent = t.Right
-	t.Right.Parent = t
-
-	return t
-}
-
-func TestInOrder(t *testing.T) {
+func TestInOrderReverse(t *testing.T) {
 	tests := []struct {
 		name   string
 		create func() *tree.Node[int]
-		post   func(t *testing.T, i *InOrder[int])
+		post   func(t *testing.T, i *InOrderReverse[int])
 	}{
 		{
 			name: "empty",
 			create: func() *tree.Node[int] {
 				return nil
 			},
-			post: func(t *testing.T, i *InOrder[int]) {
+			post: func(t *testing.T, i *InOrderReverse[int]) {
 				assert.False(t, i.Next(), "first")
 			},
 		},
@@ -63,7 +29,7 @@ func TestInOrder(t *testing.T) {
 					Key: 1,
 				}
 			},
-			post: func(t *testing.T, i *InOrder[int]) {
+			post: func(t *testing.T, i *InOrderReverse[int]) {
 				assert.True(t, i.Next(), "first")
 				assert.Equal(t, 1, i.Item())
 				assert.False(t, i.Next(), "second")
@@ -72,28 +38,28 @@ func TestInOrder(t *testing.T) {
 		{
 			name:   "height=2",
 			create: newCompleteTree_2Tall,
-			post: func(t *testing.T, i *InOrder[int]) {
+			post: func(t *testing.T, i *InOrderReverse[int]) {
 				assert.True(t, i.Next(), "first")
-				assert.Equal(t, 1, i.Item())
+				assert.Equal(t, 7, i.Item())
 				assert.True(t, i.Next(), "second")
-				assert.Equal(t, 2, i.Item())
+				assert.Equal(t, 6, i.Item())
 				assert.True(t, i.Next(), "third")
-				assert.Equal(t, 3, i.Item())
+				assert.Equal(t, 5, i.Item())
 				assert.True(t, i.Next(), "fourth")
 				assert.Equal(t, 4, i.Item())
 				assert.True(t, i.Next(), "fifth")
-				assert.Equal(t, 5, i.Item())
+				assert.Equal(t, 3, i.Item())
 				assert.True(t, i.Next(), "sixth")
-				assert.Equal(t, 6, i.Item())
+				assert.Equal(t, 2, i.Item())
 				assert.True(t, i.Next(), "seventh")
-				assert.Equal(t, 7, i.Item())
+				assert.Equal(t, 1, i.Item())
 				assert.False(t, i.Next(), "eighth")
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.post(t, NewInOrder(tt.create()))
+			tt.post(t, NewInOrderReverse(tt.create()))
 		})
 	}
 }
