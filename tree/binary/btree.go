@@ -326,6 +326,27 @@ const (
 	treeLastContinue = "    "
 )
 
+// printvisit builds a string representation of the tree.
+// This is done by a recursive pre-order traversal.
+// At each call to printvisit, the line for node n is written.
+// The format of the line is like this:
+//
+//	      branch
+//	      ↓↓
+//	│   ├─L─1
+//	↑↑↑↑↑↑  ↑
+//  prefix  fmt.Sprint(n.Key)
+//
+// prefix is built up by previous visits of the nodes between the root
+// and the current node n. Each visit writes either treeMidContinue or
+// treeLastContinue depending on whether that node is the last one
+// at that visit's level; this information is passed from parent to child
+// by isMid.
+// branch is decided by whether the current node n is the left or right
+// child of its parent.
+// initial is true for the root node but false for all others. This
+// suppresses growing of the prefix at the root, as the root node has
+// no parent.
 func printvisit[T constraints.Ordered](
 	sb *strings.Builder, n *tree.Node[T], prefix, branch string, initial, isMid bool) {
 	if !initial {
@@ -349,4 +370,10 @@ func printvisit[T constraints.Ordered](
 	if n.Right != nil {
 		printvisit(sb, n.Right, prefix, treeRightBranch, false, false)
 	}
+
+	// To generalise this to n-ary trees:
+	// - One call for each child
+	// - Only the last child printvisit gets isMid=false
+	// - branch would need to be expanded beyond treeLeft/RightBranch
+	//   (or, just get rid of it)
 }

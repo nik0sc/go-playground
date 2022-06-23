@@ -48,7 +48,6 @@ func BuildFromPreAndInOrder[S ~[]T, T constraints.Ordered](
 	}
 
 	return tr
-
 }
 
 type whichFirstResult int
