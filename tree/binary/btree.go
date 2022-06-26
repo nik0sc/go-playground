@@ -31,7 +31,7 @@ import (
 type Tree[T constraints.Ordered] struct {
 	// the tree is rooted here.
 	// don't return nodes directly - client could mutate data or children!
-	root *tree.Node[T]
+	root *tree.Node[T, struct{}]
 	// I lied - after the first insertion, Tree may be passed around by value
 
 	count  int
@@ -64,7 +64,7 @@ func (t *Tree[T]) Contains(k T) bool {
 // If t.root is nil, parent is nil.
 // depth is the node distance between the root and the location of k,
 // including the root.
-func (t *Tree[T]) insertWhere(k T) (parent *tree.Node[T], cmp tree.Order, depth int) {
+func (t *Tree[T]) insertWhere(k T) (parent *tree.Node[T, struct{}], cmp tree.Order, depth int) {
 	n := t.root
 	for n != nil {
 		depth++
@@ -117,7 +117,7 @@ func (t *Tree[T]) Less(k T) (p T, ok bool) {
 			// this may fail
 			// go up the parent and the first right link
 			// we pass over, leads to the previous node
-			var child *tree.Node[T]
+			var child *tree.Node[T, struct{}]
 			for less != nil {
 				less, child = less.Parent, less
 				if less != nil && less.Right == child {
@@ -170,7 +170,7 @@ func (t *Tree[T]) Greater(k T) (p T, ok bool) {
 			// this may fail
 			// go up the parent and the first left link
 			// we pass over, leads to the next node
-			var child *tree.Node[T]
+			var child *tree.Node[T, struct{}]
 			for greater != nil {
 				greater, child = greater.Parent, greater
 				if greater != nil && greater.Left == child {
@@ -195,7 +195,7 @@ func (t *Tree[T]) Greater(k T) (p T, ok bool) {
 // If k is already in the tree, Insert returns false.
 func (t *Tree[T]) Insert(k T) bool {
 	if t.root == nil {
-		t.root = tree.NodeOf(k)
+		t.root = tree.BasicNodeOf(k)
 		t.count = 1
 		t.height = 1
 		return true
@@ -206,7 +206,7 @@ func (t *Tree[T]) Insert(k T) bool {
 		return false
 	}
 
-	newnode := tree.NodeOf(k)
+	newnode := tree.BasicNodeOf(k)
 	newnode.Parent = parent
 
 	switch cmp {
@@ -238,7 +238,7 @@ func (t *Tree[T]) InOrder(f func(k T) bool) {
 	t.visitInOrder(t.root, f)
 }
 
-func (t *Tree[T]) visitInOrder(n *tree.Node[T], f func(k T) bool) bool {
+func (t *Tree[T]) visitInOrder(n *tree.Node[T, struct{}], f func(k T) bool) bool {
 	// Classic recursive in-order iteration.
 	// Compare this to iterator.InOrder which is not recursive
 	if n.Left != nil {
@@ -264,7 +264,7 @@ func (t *Tree[T]) PreOrder(f func(k T) bool) {
 	t.visitPreOrder(t.root, f)
 }
 
-func (t *Tree[T]) visitPreOrder(n *tree.Node[T], f func(k T) bool) bool {
+func (t *Tree[T]) visitPreOrder(n *tree.Node[T, struct{}], f func(k T) bool) bool {
 	if !f(n.Key) {
 		return false
 	}
@@ -306,7 +306,7 @@ func (t *Tree[T]) InOrderCoroutine() chops.CoIterator[T] {
 
 // InOrderIterator returns an iterator object that yields
 // keys from the tree in-order.
-func (t *Tree[T]) InOrderIterator() *iterator.InOrder[T] {
+func (t *Tree[T]) InOrderIterator() *iterator.InOrder[T, struct{}] {
 	return iterator.NewInOrder(t.root)
 }
 
@@ -362,7 +362,7 @@ const (
 // suppresses growing of the prefix at the root, as the root node has
 // no parent.
 func printvisit[T constraints.Ordered](
-	sb *strings.Builder, n *tree.Node[T], prefix, branch string, initial, isMid bool) {
+	sb *strings.Builder, n *tree.Node[T, struct{}], prefix, branch string, initial, isMid bool) {
 	if !initial {
 		sb.WriteString(prefix)
 		if isMid {

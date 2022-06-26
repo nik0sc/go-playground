@@ -7,24 +7,24 @@ import (
 	"go.lepak.sg/playground/tree"
 )
 
-func newCompleteTree_2Tall() *tree.Node[int] {
-	t := &tree.Node[int]{
-		Left: &tree.Node[int]{
-			Left: &tree.Node[int]{
+func newCompleteTree_2Tall() *tree.Node[int, struct{}] {
+	t := &tree.Node[int, struct{}]{
+		Left: &tree.Node[int, struct{}]{
+			Left: &tree.Node[int, struct{}]{
 				Key: 1,
 			},
 			Key: 2,
-			Right: &tree.Node[int]{
+			Right: &tree.Node[int, struct{}]{
 				Key: 3,
 			},
 		},
 		Key: 4,
-		Right: &tree.Node[int]{
-			Left: &tree.Node[int]{
+		Right: &tree.Node[int, struct{}]{
+			Left: &tree.Node[int, struct{}]{
 				Key: 5,
 			},
 			Key: 6,
-			Right: &tree.Node[int]{
+			Right: &tree.Node[int, struct{}]{
 				Key: 7,
 			},
 		},
@@ -44,26 +44,26 @@ func newCompleteTree_2Tall() *tree.Node[int] {
 func TestInOrder(t *testing.T) {
 	tests := []struct {
 		name   string
-		create func() *tree.Node[int]
-		post   func(t *testing.T, i *InOrder[int])
+		create func() *tree.Node[int, struct{}]
+		post   func(t *testing.T, i *InOrder[int, struct{}])
 	}{
 		{
 			name: "empty",
-			create: func() *tree.Node[int] {
+			create: func() *tree.Node[int, struct{}] {
 				return nil
 			},
-			post: func(t *testing.T, i *InOrder[int]) {
+			post: func(t *testing.T, i *InOrder[int, struct{}]) {
 				assert.False(t, i.Next(), "first")
 			},
 		},
 		{
 			name: "one",
-			create: func() *tree.Node[int] {
-				return &tree.Node[int]{
+			create: func() *tree.Node[int, struct{}] {
+				return &tree.Node[int, struct{}]{
 					Key: 1,
 				}
 			},
-			post: func(t *testing.T, i *InOrder[int]) {
+			post: func(t *testing.T, i *InOrder[int, struct{}]) {
 				assert.True(t, i.Next(), "first")
 				assert.Equal(t, 1, i.Item())
 				assert.False(t, i.Next(), "second")
@@ -72,7 +72,7 @@ func TestInOrder(t *testing.T) {
 		{
 			name:   "height=2",
 			create: newCompleteTree_2Tall,
-			post: func(t *testing.T, i *InOrder[int]) {
+			post: func(t *testing.T, i *InOrder[int, struct{}]) {
 				assert.True(t, i.Next(), "first")
 				assert.Equal(t, 1, i.Item())
 				assert.True(t, i.Next(), "second")

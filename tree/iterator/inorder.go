@@ -6,7 +6,7 @@ import (
 	"golang.org/x/exp/constraints"
 )
 
-var _ chops.Iterator[int] = (*InOrder[int])(nil)
+var _ chops.Iterator[int] = (*InOrder[int, any])(nil)
 
 // InOrder is an iterator object over a binary tree.
 // The usage should be pretty familiar:
@@ -17,21 +17,25 @@ var _ chops.Iterator[int] = (*InOrder[int])(nil)
 //	}
 // The iterator may be abandoned at any time.
 // The result of mutating the tree while iterating over it is undefined.
-type InOrder[T constraints.Ordered] struct {
-	root, at *tree.Node[T]
+type InOrder[T constraints.Ordered, X any] struct {
+	root, at *tree.Node[T, X]
 }
+
+// InOrder has the type parameter X for the tree.Node.Extra field,
+// this is an implementation detail and it really shouldn't be exposed to client code.
+// Is there some way to hide this detail?
 
 // NewInOrder returns a new InOrder iterator over the tree rooted at root.
 // Note: This is meant to be called by other tree implementations.
-func NewInOrder[T constraints.Ordered](root *tree.Node[T]) *InOrder[T] {
-	return &InOrder[T]{
+func NewInOrder[T constraints.Ordered, X any](root *tree.Node[T, X]) *InOrder[T, X] {
+	return &InOrder[T, X]{
 		root: root,
 	}
 }
 
 // Next returns true if there is a next node to yield with Key.
 // Next must always be called before Key.
-func (i *InOrder[T]) Next() bool {
+func (i *InOrder[T, X]) Next() bool {
 	if i == nil {
 		return false
 	}
@@ -88,7 +92,7 @@ func (i *InOrder[T]) Next() bool {
 	}
 
 	// No right subtree, so check the parent instead. May not succeed
-	var child *tree.Node[T]
+	var child *tree.Node[T, X]
 
 	// Go up the chain of parents until we are at a node where we
 	// passed through a left link.
@@ -122,6 +126,6 @@ func (i *InOrder[T]) Next() bool {
 }
 
 // Item returns the current key of the iterator.
-func (i *InOrder[T]) Item() T {
+func (i *InOrder[T, _]) Item() T {
 	return i.at.Key
 }

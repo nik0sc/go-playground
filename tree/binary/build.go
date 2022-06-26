@@ -15,10 +15,10 @@ func BuildFromPreAndInOrder[S ~[]T, T constraints.Ordered](
 		panic("pre- and in-order traversals have different lengths")
 	}
 
-	tr := &Tree[T]{root: tree.NodeOf(pre[0])}
+	tr := &Tree[T]{root: tree.BasicNodeOf(pre[0])}
 
 	for _, toInsert := range pre[1:] {
-		n, parent := tr.root, (*tree.Node[T])(nil)
+		n, parent := tr.root, (*tree.Node[T, struct{}])(nil)
 
 		var result whichFirstResult
 		for n != nil {
@@ -34,7 +34,7 @@ func BuildFromPreAndInOrder[S ~[]T, T constraints.Ordered](
 			}
 		}
 
-		newnode := tree.NodeOf(toInsert)
+		newnode := tree.BasicNodeOf(toInsert)
 		newnode.Parent = parent
 
 		switch result {

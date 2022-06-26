@@ -10,26 +10,26 @@ import (
 func TestInOrderReverse(t *testing.T) {
 	tests := []struct {
 		name   string
-		create func() *tree.Node[int]
-		post   func(t *testing.T, i *InOrderReverse[int])
+		create func() *tree.Node[int, struct{}]
+		post   func(t *testing.T, i *InOrderReverse[int, struct{}])
 	}{
 		{
 			name: "empty",
-			create: func() *tree.Node[int] {
+			create: func() *tree.Node[int, struct{}] {
 				return nil
 			},
-			post: func(t *testing.T, i *InOrderReverse[int]) {
+			post: func(t *testing.T, i *InOrderReverse[int, struct{}]) {
 				assert.False(t, i.Next(), "first")
 			},
 		},
 		{
 			name: "one",
-			create: func() *tree.Node[int] {
-				return &tree.Node[int]{
+			create: func() *tree.Node[int, struct{}] {
+				return &tree.Node[int, struct{}]{
 					Key: 1,
 				}
 			},
-			post: func(t *testing.T, i *InOrderReverse[int]) {
+			post: func(t *testing.T, i *InOrderReverse[int, struct{}]) {
 				assert.True(t, i.Next(), "first")
 				assert.Equal(t, 1, i.Item())
 				assert.False(t, i.Next(), "second")
@@ -38,7 +38,7 @@ func TestInOrderReverse(t *testing.T) {
 		{
 			name:   "height=2",
 			create: newCompleteTree_2Tall,
-			post: func(t *testing.T, i *InOrderReverse[int]) {
+			post: func(t *testing.T, i *InOrderReverse[int, struct{}]) {
 				assert.True(t, i.Next(), "first")
 				assert.Equal(t, 7, i.Item())
 				assert.True(t, i.Next(), "second")

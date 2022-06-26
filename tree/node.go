@@ -4,15 +4,26 @@ import (
 	"golang.org/x/exp/constraints"
 )
 
-type Node[T comparable] struct {
+// Node is a generic tree node. This should not be
+// directly exposed to users of trees, but
+// tree implementations may use it.
+type Node[T comparable, X any] struct {
 	Key                 T
-	Left, Right, Parent *Node[T]
+	Left, Right, Parent *Node[T, X]
+	// Extra is extra data meant for tree implementations
+	// eg balance factor, node colour etc.
+	Extra X
 }
 
-func NodeOf[T comparable](k T) *Node[T] {
-	return &Node[T]{
-		Key: k,
+func NodeOf[T comparable, X any](k T, extra X) *Node[T, X] {
+	return &Node[T, X]{
+		Key:   k,
+		Extra: extra,
 	}
+}
+
+func BasicNodeOf[T comparable](k T) *Node[T, struct{}] {
+	return NodeOf[T, struct{}](k, struct{}{})
 }
 
 // Should T be constraints.Ordered?
