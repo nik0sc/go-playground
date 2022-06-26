@@ -2,6 +2,7 @@ package binary
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"go.lepak.sg/playground/chops"
@@ -32,6 +33,9 @@ type Tree[T constraints.Ordered] struct {
 	// don't return nodes directly - client could mutate data or children!
 	root *tree.Node[T]
 	// I lied - after the first insertion, Tree may be passed around by value
+
+	count  int
+	height int
 }
 
 // Instead of using constraints.Ordered, I also considered using
@@ -47,7 +51,7 @@ type Tree[T constraints.Ordered] struct {
 
 // Contains searches for k in the tree and returns true if it was found.
 func (t *Tree[T]) Contains(k T) bool {
-	parent, cmp := t.insertWhere(k)
+	parent, cmp, _ := t.insertWhere(k)
 
 	return parent != nil && cmp == tree.Equal
 }
@@ -58,9 +62,12 @@ func (t *Tree[T]) Contains(k T) bool {
 // In both these cases, the left/right pointer of parent will be nil.
 // If cmp is tree.Equal, parent's key is k.
 // If t.root is nil, parent is nil.
-func (t *Tree[T]) insertWhere(k T) (parent *tree.Node[T], cmp tree.Order) {
+// depth is the node distance between the root and the location of k,
+// including the root.
+func (t *Tree[T]) insertWhere(k T) (parent *tree.Node[T], cmp tree.Order, depth int) {
 	n := t.root
 	for n != nil {
+		depth++
 		cmp = tree.Compare(k, n.Key)
 		switch cmp {
 		case tree.Less:
@@ -95,7 +102,7 @@ func (t *Tree[T]) Less(k T) (p T, ok bool) {
 	// currently, less is where we would be inserted
 	// now go back up the tree to find the previous node,
 	// updating less along the way
-	less, cmp := t.insertWhere(k)
+	less, cmp, _ := t.insertWhere(k)
 
 	switch cmp {
 	case tree.Less, tree.Equal:
@@ -148,7 +155,7 @@ func (t *Tree[T]) Greater(k T) (p T, ok bool) {
 	// currently, greater is where we would be inserted
 	// now go back up the tree to find the next node,
 	// updating greater along the way
-	greater, cmp := t.insertWhere(k)
+	greater, cmp, _ := t.insertWhere(k)
 
 	switch cmp {
 	case tree.Greater, tree.Equal:
@@ -189,10 +196,12 @@ func (t *Tree[T]) Greater(k T) (p T, ok bool) {
 func (t *Tree[T]) Insert(k T) bool {
 	if t.root == nil {
 		t.root = tree.NodeOf(k)
+		t.count = 1
+		t.height = 1
 		return true
 	}
 
-	parent, cmp := t.insertWhere(k)
+	parent, cmp, depth := t.insertWhere(k)
 	if cmp == tree.Equal {
 		return false
 	}
@@ -213,6 +222,11 @@ func (t *Tree[T]) Insert(k T) bool {
 		parent.Right = newnode
 	default:
 		panic("unreachable")
+	}
+
+	t.count++
+	if depth > t.height {
+		t.height = depth
 	}
 
 	return true
@@ -352,6 +366,7 @@ func printvisit[T constraints.Ordered](
 	if !initial {
 		sb.WriteString(prefix)
 		if isMid {
+			// child nodes of prefix will require
 			prefix += treeMidContinue
 			sb.WriteString(treeMidBranch)
 		} else {
@@ -376,4 +391,23 @@ func printvisit[T constraints.Ordered](
 	// - Only the last child printvisit gets isMid=false
 	// - branch would need to be expanded beyond treeLeft/RightBranch
 	//   (or, just get rid of it)
+}
+
+// Height returns the actual height of the tree as well as
+// its ideal height if it were perfectly balanced.
+func (t *Tree[T]) Height() (actual, ideal int) {
+	actual = t.height
+	ideal = int(math.Floor(math.Log2(float64(t.count))))
+	return
+}
+
+// Count returns the number of nodes in the tree.
+func (t *Tree[T]) Count() int {
+	return t.count
+}
+
+// Balanced returns whether the tree is balanced.
+func (t *Tree[T]) Balanced() bool {
+	actual, ideal := t.Height()
+	return actual == ideal
 }
