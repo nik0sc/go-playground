@@ -62,6 +62,26 @@ func (c CoIterator[T]) Stop() {
 // Stop() is called or the iteration is finished.
 // If you follow the usage above, the goroutine will not live beyond
 // the end of the for-range loop.
+//
+// Another way to use CoIterate without exhausting the underlying Iterator
+// but also without explicit Stopping is to use runtime.SetFinalizer:
+//
+//	co := CoIterate[T](x.Iterator())
+//	runtime.SetFinalizer(&co, (*CoIterator[T]).Stop)
+//	for i := range co.Items() {
+//		... do stuff with i ...
+//		if i meets some stopping condition {
+//			break
+//		}
+//	}
+//	runtime.KeepAlive(&co)
+//	// after this point, the GC may run co.Stop for you
+//
+// This approach is taken from the Ranger example in the generics proposal:
+// https://go.googlesource.com/proposal/+/refs/heads/master/design/43651-type-parameters.md#channels.
+// The explicit Stop approach should be preferred where practical, as
+// the lifetime of the iterating goroutine is very obvious, and
+// using runtime.SetFinalizer has some performance impact.
 func CoIterate[T any](iterator Iterator[T]) CoIterator[T] {
 	out := make(chan T)
 	stop := make(chan struct{})

@@ -1,6 +1,7 @@
 package chops
 
 import (
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -126,6 +127,39 @@ func TestCoIterate_Concurrent(t *testing.T) {
 	wg.Wait()
 
 	t.Logf("next index of iterator=%d", sl.i)
+
+	goleak.VerifyNone(t)
+}
+
+func TestCoIterate_Finalize(t *testing.T) {
+	sl := &sliter{
+		s: make([]int, 10),
+		i: -1,
+	}
+	for i := range sl.s {
+		sl.s[i] = i + 1
+	}
+
+	// "IIFE" isn't needed?
+	//func() {
+	co := CoIterate[int](sl)
+	// Goland doesn't like this line
+	runtime.SetFinalizer(&co, (*CoIterator[int]).Stop)
+
+	for i := range co.Items() {
+		if i == 5 {
+			break
+		}
+	}
+	//}()
+
+	runtime.KeepAlive(&co)
+
+	// co is not reachable now.
+	// Finalizer does not actually run immediately.
+	// GC is required for finalizer to be triggered.
+	// Comment out the line below and see what happens
+	runtime.GC()
 
 	goleak.VerifyNone(t)
 }
