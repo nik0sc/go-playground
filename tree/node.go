@@ -15,6 +15,11 @@ type Node[T comparable, X any] struct {
 	Extra X
 }
 
+// About the Parent pointer:
+// This makes some things possible like the non-recursive, non-stack based
+// InOrderIterator, but it also makes some things impossible like efficient
+// immutable trees. It's all tradeoffs.
+
 func NodeOf[T comparable, X any](k T, extra X) *Node[T, X] {
 	return &Node[T, X]{
 		Key:   k,
@@ -55,11 +60,14 @@ const (
 )
 
 func Compare[T constraints.Ordered](l, r T) Order {
+	// constraints.Ordered includes all types with underlying type string
+	// so this is not actually always a constant-time operation
+	// interesting to think about
 	if l < r {
 		return Less
-	} else if l > r {
-		return Greater
-	} else {
+	} else if l == r {
 		return Equal
+	} else {
+		return Greater
 	}
 }
