@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"math/rand"
 	"time"
 
 	"go.lepak.sg/playground/tree/binary"
@@ -22,32 +21,13 @@ func main() {
 		*seed = time.Now().UnixNano()
 	}
 
-	rand.Seed(*seed)
-
-	nodes := make([]int, *num)
-	for i := 0; i < *num; i++ {
-		nodes[i] = i
-	}
-
 	var tr *binary.Tree[int]
-
 	attempts := 0
 
-	for {
-		attempts++
-
-		rand.Shuffle(*num, func(i, j int) {
-			nodes[i], nodes[j] = nodes[j], nodes[i]
-		})
-
-		tr = &binary.Tree[int]{}
-		for _, n := range nodes {
-			tr.Insert(n)
-		}
-
-		if !*balanced || tr.Balanced() {
-			break
-		}
+	if *balanced {
+		tr, attempts = binary.BuildRandomBalanced(*num, *seed)
+	} else {
+		tr = binary.BuildRandom(*num, *seed)
 	}
 
 	preorder := make([]int, 0, *num)
@@ -61,7 +41,6 @@ func main() {
 		inorder = append(inorder, n)
 	}
 
-	fmt.Println("input:", nodes)
 	fmt.Println("preorder:", preorder)
 	fmt.Println("inorder:", inorder)
 

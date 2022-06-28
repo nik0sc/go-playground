@@ -19,7 +19,30 @@ func main() {
 	pre := readInts()
 	fmt.Println(pre)
 
-	tr := binary.BuildFromPreAndInOrder(pre, in)
+	fmt.Print("mode (i/r): ")
+	var mode rune
+	_, err := fmt.Scanf("%c\n", &mode)
+	if err != nil {
+		panic(err)
+	}
+
+	var impl func([]int, []int) (*binary.Tree[int], error)
+	switch mode {
+	case 'i':
+		// interesting...
+		// actual type params of the function cannot be inferred
+		// even though the variable has the fully instantiated type
+		impl = binary.BuildFromPreAndInOrderIter[[]int, int]
+	case 'r':
+		impl = binary.BuildFromPreAndInOrderRec[[]int, int]
+	default:
+		panic("not a valid mode")
+	}
+
+	tr, err := impl(pre, in)
+	if err != nil {
+		panic(err)
+	}
 
 	fmt.Println("tree:")
 	fmt.Print(tr.String())
