@@ -151,7 +151,7 @@ func BuildFromPreAndInOrderIter[S ~[]T, T constraints.Ordered](
 func BuildFromPreAndInOrderRec[S ~[]T, T constraints.Ordered](
 	pre, in S) (tr *Tree[T], err error) {
 	// A dog on the internet told me how to do this
-	// Recursive method. Time O(N^3) Space O(N^2) (stack frames * preleft/right arrays)
+	// Recursive method. Time O(N^2) Space O(N) (stack frames)
 	if len(in) == 0 {
 		return nil, errors.New("nothing to build")
 	}
@@ -175,7 +175,7 @@ func BuildFromPreAndInOrderRec[S ~[]T, T constraints.Ordered](
 func buildFromPreAndInOrderRecVisit[S ~[]T, T constraints.Ordered](
 	pre, in S) *tree.Node[T, struct{}] {
 	// N = len(pre) = len(in)
-	// Potentially N calls to this function
+	// At least N calls to this function
 
 	if len(pre) != len(in) {
 		panic(fmt.Sprintf("invariant broken: "+
@@ -195,7 +195,7 @@ func buildFromPreAndInOrderRecVisit[S ~[]T, T constraints.Ordered](
 	}
 
 	x := pre[0]
-	// O(N)
+	// O(N) but this gets smaller
 	xi := slices.Index(in, x)
 	if xi < 0 {
 		panic("key in pre-order traversal not found in in-order traversal")
@@ -203,16 +203,7 @@ func buildFromPreAndInOrderRecVisit[S ~[]T, T constraints.Ordered](
 
 	inleft, inright := in[0:xi], in[xi+1:]
 
-	preleft, preright := make([]T, 0, len(inleft)), make([]T, 0, len(inright))
-
-	// O(N^2)
-	for _, key := range pre[1:] {
-		if slices.Index(inleft, key) != -1 {
-			preleft = append(preleft, key)
-		} else {
-			preright = append(preright, key)
-		}
-	}
+	preleft, preright := pre[1:xi+1], pre[xi+1:]
 
 	n := tree.BasicNodeOf(x)
 	n.Left = buildFromPreAndInOrderRecVisit(preleft, inleft)
