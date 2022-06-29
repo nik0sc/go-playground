@@ -1,12 +1,11 @@
 package iterator
 
 import (
-	"go.lepak.sg/playground/chops"
 	"go.lepak.sg/playground/tree"
 	"golang.org/x/exp/constraints"
 )
 
-var _ chops.Iterator[int] = (*InOrderReverse[int, any])(nil)
+var _ Iterator[int] = (*InOrderReverse[int, any])(nil)
 
 // InOrderReverse is an iterator object over a binary tree.
 // Iteration starts from the *largest* element and runs to

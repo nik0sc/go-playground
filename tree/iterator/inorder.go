@@ -1,12 +1,11 @@
 package iterator
 
 import (
-	"go.lepak.sg/playground/chops"
 	"go.lepak.sg/playground/tree"
 	"golang.org/x/exp/constraints"
 )
 
-var _ chops.Iterator[int] = (*InOrder[int, any])(nil)
+var _ Iterator[int] = (*InOrder[int, any])(nil)
 
 // InOrder is an iterator object over a binary tree.
 // The usage should be pretty familiar:
