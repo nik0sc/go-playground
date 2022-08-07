@@ -1,6 +1,8 @@
 package donepipeline
 
-import "sync"
+import (
+	"sync"
+)
 
 type Done[T any] struct {
 	c    chan *Task[T]
@@ -20,15 +22,6 @@ func New[T any](cap int, mark func(T)) *Done[T] {
 	return d
 }
 
-type Task[T any] struct {
-	doing    sync.Mutex
-	progress T
-}
-
-func (t *Task[T]) Done() {
-	t.doing.Unlock()
-}
-
 func (d *Done[T]) Start(progress T) *Task[T] {
 	t := &Task[T]{
 		progress: progress,
@@ -42,12 +35,12 @@ func (d *Done[T]) Start(progress T) *Task[T] {
 }
 
 func (d *Done[T]) watch() {
+	defer d.wg.Done()
 	for t := range d.c {
 		t.doing.Lock()
 
 		d.mark(t.progress)
 	}
-	d.wg.Done()
 }
 
 func (d *Done[T]) ShutdownWait() {
