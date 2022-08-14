@@ -14,6 +14,8 @@ func ExampleDone() {
 	var markOrder []int
 	const tasks = 100
 	const workers = 5
+	// doneqMax has a rate-limiting effect exerted through
+	// backpressure on the data source
 	const doneqMax = 10
 	const delayMax = time.Millisecond
 
