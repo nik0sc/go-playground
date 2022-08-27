@@ -3,7 +3,8 @@
 // a worker pool are recorded as finished in the same order
 // as they were started. Some higher-level features which
 // could be implemented with this are a checkpoint/resume
-// feature in a batch data process, or
+// feature in a batch data process, or an offset recorder
+// for a concurrent Kafka consumer.
 //
 // Call doneq.New to create a new done queue, and pass in a
 // callback function that will record task completion.

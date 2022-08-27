@@ -2,6 +2,7 @@ package doneq
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 func TestDone_EnsureOrder(t *testing.T) {
 	acks := make([]int, 0, 10)
 	goroutineExitOrder := make(chan int, 2)
+	var wg sync.WaitGroup
 
 	d := New(2, func(i int) {
 		acks = append(acks, i)
@@ -21,25 +23,32 @@ func TestDone_EnsureOrder(t *testing.T) {
 	// task 1 is in watch
 	one, err := d.Start(context.Background(), 1)
 	assert.NoError(t, err, "task 1 start returned error")
+	wg.Add(1)
 	go func() {
 		time.Sleep(time.Second)
 		one.Done()
 		goroutineExitOrder <- 1
+		wg.Done()
 	}()
 
 	// task 2 is in the channel
 	two, err := d.Start(context.Background(), 2)
 	assert.NoError(t, err, "task 2 start returned error")
+	wg.Add(1)
 	go func() {
 		time.Sleep(100 * time.Millisecond)
 		two.Done()
 		goroutineExitOrder <- 2
+		wg.Done()
 	}()
 
 	d.ShutdownWait()
 	assert.EqualValues(t, []int{1, 2}, acks)
+
+	wg.Wait()
 	close(goroutineExitOrder)
 	testutils.Drain(t, []int{2, 1}, goroutineExitOrder)
+
 	goleak.VerifyNone(t)
 }
 
