@@ -1,6 +1,7 @@
 package doneq
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -15,12 +16,19 @@ func TestLast(t *testing.T) {
 		acks = append(acks, i)
 	}, 3, time.Second)
 
-	d.Start(1).Done()
-	d.Start(2).Done()
+	testdone(t)(d.Start(context.Background(), 1))
+	testdone(t)(d.Start(context.Background(), 2))
 	time.Sleep(100 * time.Millisecond)
-	d.Start(3).Done()
+	testdone(t)(d.Start(context.Background(), 3))
 
 	d.ShutdownWait()
 	assert.EqualValues(t, []int{3}, acks)
 	goleak.VerifyNone(t)
+}
+
+func testdone(t *testing.T) func(task *Task[int], err error) {
+	return func(task *Task[int], err error) {
+		assert.NoError(t, err)
+		task.Done()
+	}
 }

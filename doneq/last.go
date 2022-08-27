@@ -1,6 +1,7 @@
 package doneq
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -22,10 +23,10 @@ type Last[T any] struct {
 // This is not suitable for applications where every task
 // must be marked.
 func NewLast[T any](
-	cap int, mark func(T), threshold int, interval time.Duration,
+	max int, mark func(T), threshold int, interval time.Duration,
 ) *Last[T] {
 	d := &Last[T]{
-		c:      make(chan *Task[T], cap),
+		c:      make(chan *Task[T], max),
 		cbatch: make(chan []*Task[T], 1),
 		mark:   mark,
 	}
@@ -41,7 +42,8 @@ func NewLast[T any](
 // Start creates a task with the provided progress indicator.
 // Start can block if there are more tasks in flight than
 // the maximum passed to NewLast.
-func (l *Last[T]) Start(progress T) *Task[T] {
+func (l *Last[T]) Start(ctx context.Context, progress T) (*Task[T], error) {
+	// TODO use Done and integrate batcher on top of it
 	t := &Task[T]{
 		progress: progress,
 	}
@@ -50,7 +52,7 @@ func (l *Last[T]) Start(progress T) *Task[T] {
 
 	l.c <- t
 
-	return t
+	return t, nil
 }
 
 func (l *Last[T]) watch() {

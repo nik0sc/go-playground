@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -49,7 +50,7 @@ func main() {
 	}
 
 	var dq interface {
-		Start(int) *doneq.Task[int]
+		Start(context.Context, int) (*doneq.Task[int], error)
 		ShutdownWait()
 	}
 
@@ -91,7 +92,11 @@ func main() {
 		// then if the process is killed
 		// the tasks in flight would be counted as complete
 		// even though they did not finish
-		fanOut <- dq.Start(i)
+		// in real use, you should use a cancelable context
+		// and handle the error, which ensures forward progress
+		// or at least prevents deadlock when quitting
+		t, _ := dq.Start(context.Background(), i)
+		fanOut <- t
 	}
 	close(fanOut)
 
