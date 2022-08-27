@@ -1,6 +1,7 @@
 package doneq
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -9,22 +10,26 @@ import (
 	"go.uber.org/goleak"
 )
 
-func TestDone(t *testing.T) {
+func TestDone_EnsureOrder(t *testing.T) {
 	acks := make([]int, 0, 10)
 	goroutineExitOrder := make(chan int, 2)
 
-	d := New(10, func(i int) {
+	d := New(2, func(i int) {
 		acks = append(acks, i)
 	})
 
-	one := d.Start(1)
+	// task 1 is in watch
+	one, err := d.Start(context.Background(), 1)
+	assert.NoError(t, err, "task 1 start returned error")
 	go func() {
 		time.Sleep(time.Second)
 		one.Done()
 		goroutineExitOrder <- 1
 	}()
 
-	two := d.Start(2)
+	// task 2 is in the channel
+	two, err := d.Start(context.Background(), 2)
+	assert.NoError(t, err, "task 2 start returned error")
 	go func() {
 		time.Sleep(100 * time.Millisecond)
 		two.Done()
@@ -38,4 +43,25 @@ func TestDone(t *testing.T) {
 	goleak.VerifyNone(t)
 }
 
-// TODO: test Start blocks when Done isn't called
+func TestDone_Context(t *testing.T) {
+	// This tests that StartContext blocks, but not forever
+
+	d := New(1, func(i int) {
+		assert.EqualValues(t, 1, i, "unexpected progress")
+	})
+
+	one, err := d.Start(context.Background(), 1)
+	assert.NoError(t, err, "task 1 start returned error")
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	two, err := d.Start(ctx, 2)
+	assert.ErrorIs(t, err, context.DeadlineExceeded,
+		"error was not DeadlineExceeded")
+	assert.Nil(t, two, "task was not nil")
+
+	one.Done()
+	d.ShutdownWait()
+	goleak.VerifyNone(t)
+}

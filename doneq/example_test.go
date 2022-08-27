@@ -1,6 +1,7 @@
 package doneq
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -40,7 +41,10 @@ func ExampleDone() {
 	wg.Add(1)
 	go func() {
 		for i := 0; i < tasks; i++ {
-			fanOut <- last.Start(i)
+			// in real use, you should pass a real context and
+			// check the error, which ensures forward progress
+			t, _ := last.Start(context.Background(), i)
+			fanOut <- t
 		}
 		close(fanOut)
 		wg.Done()
