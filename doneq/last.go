@@ -9,10 +9,11 @@ import (
 )
 
 type Last[T any] struct {
-	c      chan *Task[T]
-	cbatch chan []*Task[T]
-	mark   func(T)
+	done   *Done[T]
 	wg     sync.WaitGroup
+	c      chan T
+	cbatch chan []T
+	mark   func(T)
 }
 
 // NewLast creates a new done queue. It supports a maximum of `max`
@@ -25,44 +26,35 @@ type Last[T any] struct {
 func NewLast[T any](
 	max int, mark func(T), threshold int, interval time.Duration,
 ) *Last[T] {
-	d := &Last[T]{
-		c:      make(chan *Task[T], max),
-		cbatch: make(chan []*Task[T], 1),
+	l := &Last[T]{
+		c:      make(chan T, threshold),
+		cbatch: make(chan []T, 1),
 		mark:   mark,
 	}
 
-	batcher.Start(d.c, d.cbatch, threshold, interval, false, &d.wg)
+	l.done = New(max, func(progress T) {
+		l.c <- progress
+	})
 
-	d.wg.Add(1)
-	go d.watch()
+	batcher.Start(l.c, l.cbatch, threshold, interval, false, &l.wg)
 
-	return d
+	l.wg.Add(1)
+	go l.watch()
+
+	return l
 }
 
 // Start creates a task with the provided progress indicator.
 // Start can block if there are more tasks in flight than
 // the maximum passed to NewLast.
 func (l *Last[T]) Start(ctx context.Context, progress T) (*Task[T], error) {
-	// TODO use Done and integrate batcher on top of it
-	t := &Task[T]{
-		progress: progress,
-	}
-
-	t.doing.Lock()
-
-	l.c <- t
-
-	return t, nil
+	return l.done.Start(ctx, progress)
 }
 
 func (l *Last[T]) watch() {
 	defer l.wg.Done()
 	for batch := range l.cbatch {
-		t := batch[len(batch)-1]
-
-		t.doing.Lock()
-
-		l.mark(t.progress)
+		l.mark(batch[len(batch)-1])
 	}
 }
 
@@ -70,6 +62,7 @@ func (l *Last[T]) watch() {
 // all tasks in flight are processed. Start must not be called
 // after ShutdownWait.
 func (l *Last[T]) ShutdownWait() {
+	l.done.ShutdownWait()
 	close(l.c)
 	l.wg.Wait()
 }
