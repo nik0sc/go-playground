@@ -8,7 +8,7 @@ import (
 	"go.lepak.sg/playground/batcher"
 )
 
-type Last[T any] struct {
+type Batched[T any] struct {
 	done   *Done[T]
 	wg     sync.WaitGroup
 	c      chan T
@@ -16,57 +16,58 @@ type Last[T any] struct {
 	mark   func(T)
 }
 
-// NewLast creates a new done queue. It supports a maximum of `max`
-// tasks in flight. Unlike standard New, it will only call the mark
+// NewBatched creates a new done queue. `max`, the maximum number
+// of tasks in flight, must be at least 1.
+// Unlike standard New, it will only call the mark
 // function periodically - every `threshold` tasks, or when
 // `interval` elapses, whichever happens first.
 //
 // This is not suitable for applications where every task
 // must be marked.
-func NewLast[T any](
+func NewBatched[T any](
 	max int, mark func(T), threshold int, interval time.Duration,
-) *Last[T] {
+) *Batched[T] {
 	if mark == nil {
 		panic("mark must not be nil")
 	}
 
-	l := &Last[T]{
+	d := &Batched[T]{
 		c:      make(chan T, threshold),
 		cbatch: make(chan []T, 1),
 		mark:   mark,
 	}
 
-	l.done = New(max, func(progress T) {
-		l.c <- progress
+	d.done = New(max, func(progress T) {
+		d.c <- progress
 	})
 
-	batcher.Start(l.c, l.cbatch, threshold, interval, false, &l.wg)
+	batcher.Start(d.c, d.cbatch, threshold, interval, false, &d.wg)
 
-	l.wg.Add(1)
-	go l.watch()
+	d.wg.Add(1)
+	go d.watch()
 
-	return l
+	return d
 }
 
 // Start creates a task with the provided progress indicator.
 // Start can block if there are more tasks in flight than
-// the maximum passed to NewLast.
-func (l *Last[T]) Start(ctx context.Context, progress T) (*Task[T], error) {
-	return l.done.Start(ctx, progress)
+// the maximum passed to NewBatched.
+func (d *Batched[T]) Start(ctx context.Context, progress T) (*Task[T], error) {
+	return d.done.Start(ctx, progress)
 }
 
-func (l *Last[T]) watch() {
-	defer l.wg.Done()
-	for batch := range l.cbatch {
-		l.mark(batch[len(batch)-1])
+func (d *Batched[T]) watch() {
+	defer d.wg.Done()
+	for batch := range d.cbatch {
+		d.mark(batch[len(batch)-1])
 	}
 }
 
 // ShutdownWait shuts down the done queue and returns once
 // all tasks in flight are processed. Start must not be called
 // after ShutdownWait.
-func (l *Last[T]) ShutdownWait() {
-	l.done.ShutdownWait()
-	close(l.c)
-	l.wg.Wait()
+func (d *Batched[T]) ShutdownWait() {
+	d.done.ShutdownWait()
+	close(d.c)
+	d.wg.Wait()
 }

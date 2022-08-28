@@ -11,8 +11,6 @@ import (
 )
 
 func ExampleDone() {
-	var wg, wgWorker sync.WaitGroup
-	var markOrder []int
 	const tasks = 100
 	const workers = 5
 	// doneqMax has a rate-limiting effect exerted through
@@ -20,9 +18,13 @@ func ExampleDone() {
 	const doneqMax = 10
 	const delayMax = time.Millisecond
 
+	var wg, wgWorker sync.WaitGroup
+	markOrder := make([]int, 0, tasks)
+
 	last := New(doneqMax, func(i int) {
 		// this function could be used to record task progress
-		// and flush it to a checkpoint file
+		// and in a separate goroutine, flush it to
+		// a checkpoint file
 		// this way, you will only record progress for tasks
 		// that are definitely finished, and
 		// you may end up losing progress if there are tasks
@@ -31,6 +33,10 @@ func ExampleDone() {
 
 		// it's safe to do this without synchronization
 		// as this function will only run from one goroutine
+
+		// since markOrder has capacity = tasks,
+		// this append will never cause a reallocation
+		// which could trigger gc and block
 		markOrder = append(markOrder, i)
 	})
 

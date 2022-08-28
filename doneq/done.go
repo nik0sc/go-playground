@@ -30,13 +30,17 @@ type Done[T any] struct {
 	zeroT T
 }
 
-// New creates a new done queue. It supports a maximum of `max`
-// tasks in flight.
+// New creates a new done queue. `max`, the maximum number
+// of tasks in flight, must be at least 1.
 //
-// `mark` will be called once for every task started,
+// mark will be called once for every task started,
 // in the same order that the tasks were started, regardless of
 // the order that they were finished.
-// `mark` runs in its own goroutine.
+// mark runs in the same goroutine every time.
+// mark should not block or perform any long computation.
+// If mark should do anything more complex than an atomic store
+// or channel send, start a new goroutine in mark and do the
+// complex work in there.
 func New[T any](max int, mark func(T)) *Done[T] {
 	if max < 1 {
 		panic("max must be >= 1")

@@ -10,10 +10,10 @@ import (
 	"go.uber.org/goleak"
 )
 
-func TestLast(t *testing.T) {
+func TestBatched(t *testing.T) {
 	acks := make([]int, 0, 10)
 
-	dq := NewLast(10, func(i int) {
+	dq := NewBatched(10, func(i int) {
 		acks = append(acks, i)
 	}, 3, time.Second)
 
@@ -27,13 +27,13 @@ func TestLast(t *testing.T) {
 	goleak.VerifyNone(t)
 }
 
-func TestLast_DoneThenBatch(t *testing.T) {
-	// Old implementation of Last applied the batch before
+func TestBatched_DoneThenBatch(t *testing.T) {
+	// Old implementation of Batched applied the batch before
 	// the wait queue, but the expected behaviour is the
 	// other way around
 	acks := make([]int, 0, 10)
 
-	dq := NewLast(10, func(i int) {
+	dq := NewBatched(10, func(i int) {
 		acks = append(acks, i)
 	}, 2, 100*time.Millisecond)
 

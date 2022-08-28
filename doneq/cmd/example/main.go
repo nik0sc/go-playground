@@ -23,11 +23,11 @@ var (
 		"max delay duration (actual task delay is between 0s and this)")
 
 	dqImpl = flag.String("dq", "",
-		"doneq implementation to use (\"last\" to use NewLast)")
-	lastThreshold = flag.Int("lt", 3,
-		"(last only) threshold")
-	lastInterval = flag.Duration("ld", time.Second,
-		"(last only) interval")
+		"doneq implementation to use (\"batched\" to use NewBatched)")
+	threshold = flag.Int("lt", 3,
+		"(batched only) threshold")
+	interval = flag.Duration("ld", time.Second,
+		"(batched only) interval")
 )
 
 func main() {
@@ -55,9 +55,9 @@ func main() {
 	}
 
 	switch *dqImpl {
-	case "last":
-		fmt.Println("using NewLast")
-		dq = doneq.NewLast(*doneqMax, appender, *lastThreshold, *lastInterval)
+	case "batched":
+		fmt.Println("using NewBatched")
+		dq = doneq.NewBatched(*doneqMax, appender, *threshold, *interval)
 	default:
 		fmt.Println("using New")
 		dq = doneq.New(*doneqMax, appender)
