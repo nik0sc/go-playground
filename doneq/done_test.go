@@ -2,7 +2,9 @@ package doneq
 
 import (
 	"context"
+	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -71,6 +73,31 @@ func TestDone_Context(t *testing.T) {
 	assert.Nil(t, two, "task was not nil")
 
 	one.Done()
+	d.ShutdownWait()
+	goleak.VerifyNone(t)
+}
+
+func TestDone_DoesNotRetainReference(t *testing.T) {
+	d := New(1, func(i *int) {
+		assert.EqualValues(t, 1, *i, "unexpected progress")
+	})
+
+	ptr := new(int)
+	*ptr = 1
+	finalized := new(int64)
+	runtime.SetFinalizer(ptr, func(i *int) {
+		assert.EqualValues(t, 1, *i, "unexpected finalize")
+		atomic.StoreInt64(finalized, 1)
+	})
+
+	one, _ := d.Start(context.Background(), ptr)
+	one.Done()
+
+	runtime.GC()
+
+	assert.EqualValues(t, 1, atomic.LoadInt64(finalized),
+		"ptr is still alive")
+
 	d.ShutdownWait()
 	goleak.VerifyNone(t)
 }
