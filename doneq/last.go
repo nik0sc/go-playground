@@ -26,6 +26,10 @@ type Last[T any] struct {
 func NewLast[T any](
 	max int, mark func(T), threshold int, interval time.Duration,
 ) *Last[T] {
+	if mark == nil {
+		panic("mark must not be nil")
+	}
+
 	l := &Last[T]{
 		c:      make(chan T, threshold),
 		cbatch: make(chan []T, 1),
