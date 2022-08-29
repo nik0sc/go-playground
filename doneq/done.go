@@ -106,7 +106,8 @@ func (d *Done[T]) watch() {
 
 // ShutdownWait shuts down the done queue and returns once
 // all tasks in flight are processed. Start must not be called
-// after ShutdownWait.
+// after ShutdownWait. ShutdownWait must not be called while
+// any goroutine is blocked in Start.
 func (d *Done[T]) ShutdownWait() {
 	close(d.c)
 	d.wg.Wait()

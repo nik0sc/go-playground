@@ -50,8 +50,13 @@ func NewBatched[T any](
 }
 
 // Start creates a task with the provided progress indicator.
-// Start can block if there are more tasks in flight than
+// Start blocks until either the task is accepted or the context
+// is canceled, in which case the context error is returned.
+// Tasks are accepted when there are less tasks in flight than
 // the maximum passed to NewBatched.
+//
+// To block indefinitely until the task is accepted, pass a
+// context.Background() as the context.
 func (d *Batched[T]) Start(ctx context.Context, progress T) (*Task[T], error) {
 	return d.done.Start(ctx, progress)
 }
@@ -65,7 +70,8 @@ func (d *Batched[T]) watch() {
 
 // ShutdownWait shuts down the done queue and returns once
 // all tasks in flight are processed. Start must not be called
-// after ShutdownWait.
+// after ShutdownWait. ShutdownWait must not be called while
+// any goroutine is blocked in Start.
 func (d *Batched[T]) ShutdownWait() {
 	d.done.ShutdownWait()
 	close(d.c)

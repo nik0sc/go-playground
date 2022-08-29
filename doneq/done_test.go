@@ -95,6 +95,12 @@ func TestDone_DoesNotRetainReference(t *testing.T) {
 
 	runtime.GC()
 
+	// Adding a second call to runtime.GC() and commenting out
+	// all assignments of zeroT to t.progress before putting t
+	// back into the pool will result in this test still passing
+	// Basically, sync.Pool will hold on to an object for two
+	// GC cycles (but also, not really)
+
 	assert.EqualValues(t, 1, atomic.LoadInt64(finalized),
 		"ptr is still alive")
 
