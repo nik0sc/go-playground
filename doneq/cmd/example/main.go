@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -22,11 +23,11 @@ var (
 		"max delay duration (actual task delay is between 0s and this)")
 
 	dqImpl = flag.String("dq", "",
-		"doneq implementation to use (\"last\" to use NewLast)")
-	lastThreshold = flag.Int("lt", 3,
-		"(last only) threshold")
-	lastInterval = flag.Duration("ld", time.Second,
-		"(last only) interval")
+		"doneq implementation to use (\"batched\" to use NewBatched)")
+	threshold = flag.Int("lt", 3,
+		"(batched only) threshold")
+	interval = flag.Duration("ld", time.Second,
+		"(batched only) interval")
 )
 
 func main() {
@@ -49,14 +50,14 @@ func main() {
 	}
 
 	var dq interface {
-		Start(int) *doneq.Task[int]
+		Start(context.Context, int) (*doneq.Task[int], error)
 		ShutdownWait()
 	}
 
 	switch *dqImpl {
-	case "last":
-		fmt.Println("using NewLast")
-		dq = doneq.NewLast(*doneqMax, appender, *lastThreshold, *lastInterval)
+	case "batched":
+		fmt.Println("using NewBatched")
+		dq = doneq.NewBatched(*doneqMax, appender, *threshold, *interval)
 	default:
 		fmt.Println("using New")
 		dq = doneq.New(*doneqMax, appender)
@@ -91,7 +92,11 @@ func main() {
 		// then if the process is killed
 		// the tasks in flight would be counted as complete
 		// even though they did not finish
-		fanOut <- dq.Start(i)
+		// in real use, you should use a cancelable context
+		// and handle the error, which ensures forward progress
+		// or at least prevents deadlock when quitting
+		t, _ := dq.Start(context.Background(), i)
+		fanOut <- t
 	}
 	close(fanOut)
 
