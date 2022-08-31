@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/goleak"
 
 	"go.lepak.sg/playground/testutils"
@@ -108,6 +109,24 @@ func TestBatch(t *testing.T) {
 				{8, 9},
 			},
 		},
+		{
+			name:   "threshold 1",
+			inCap:  3,
+			outCap: 3,
+			before: func(ch chan int) {
+				for i := 0; i < 3; i++ {
+					ch <- i
+				}
+				close(ch)
+			},
+			threshold: 1,
+			interval:  time.Second,
+			drain: [][]int{
+				{0},
+				{1},
+				{2},
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -133,6 +152,53 @@ func TestBatch(t *testing.T) {
 			wg.Wait()
 			testutils.Drain(t, test.drain, out)
 			goleak.VerifyNone(t)
+		})
+	}
+}
+
+func TestBatch_Panic(t *testing.T) {
+	tests := []struct {
+		name      string
+		in        <-chan int
+		out       chan<- []int
+		threshold int
+		interval  time.Duration
+	}{
+		{
+			name:      "nil in",
+			in:        nil,
+			out:       make(chan<- []int),
+			threshold: 1,
+			interval:  time.Second,
+		},
+		{
+			name:      "nil out",
+			in:        make(<-chan int),
+			out:       nil,
+			threshold: 1,
+			interval:  time.Second,
+		},
+		{
+			name:      "0 threshold",
+			in:        make(<-chan int),
+			out:       make(chan<- []int),
+			threshold: 0,
+			interval:  time.Second,
+		},
+		{
+			name:      "0 interval",
+			in:        make(<-chan int),
+			out:       make(chan<- []int),
+			threshold: 1,
+			interval:  0,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Panics(t, func() {
+				Batch(test.in, test.out, test.threshold, test.interval, false)
+			})
 		})
 	}
 }

@@ -12,7 +12,7 @@ import (
 
 var (
 	countTo = flag.Int("n", 100,
-		"how high to count (also determines in and out channel capacity)")
+		"how high to count (also determines in channel capacity)")
 	batchSize = flag.Int("b", 10,
 		"max batch size")
 	batchTime = flag.Duration("t", time.Second,
@@ -27,7 +27,7 @@ func main() {
 	flag.Parse()
 
 	in := make(chan int, *countTo)
-	out := make(chan []int, *countTo)
+	out := make(chan []int)
 
 	var wg sync.WaitGroup
 

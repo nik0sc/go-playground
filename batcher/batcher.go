@@ -43,6 +43,24 @@ func Batch[T any](
 	in <-chan T, out chan<- []T, threshold int, interval time.Duration,
 	prealloc bool,
 ) {
+	if in == nil {
+		panic("in must not be nil")
+	}
+
+	if out == nil {
+		panic("out must not be nil")
+	}
+
+	if threshold < 1 {
+		panic("threshold must be >= 1")
+	}
+
+	// Maybe interval=0 should be allowed, but it
+	// causes Batch to never timeout?
+	if interval < 1 {
+		panic("interval must be >= 1ns")
+	}
+
 	var t *time.Timer
 
 	for {
@@ -68,12 +86,12 @@ func Batch[T any](
 		} else {
 			t.Reset(interval)
 		}
+		waiting := true
 
-		running := true
-		for running {
+		for waiting && len(slice) < threshold {
 			select {
 			case <-t.C:
-				running = false
+				waiting = false
 
 			case item, ok := <-in:
 				if !ok {
@@ -85,13 +103,11 @@ func Batch[T any](
 				}
 
 				slice = append(slice, item)
-				if len(slice) >= threshold {
-					if !t.Stop() {
-						<-t.C
-					}
-					running = false
-				}
 			}
+		}
+
+		if waiting && !t.Stop() {
+			<-t.C
 		}
 
 		out <- slice
