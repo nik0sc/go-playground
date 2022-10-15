@@ -86,23 +86,46 @@ func (g *AdjacencyListDigraph[V]) Edges() [][2]V {
 	return edges
 }
 
+func (g *AdjacencyListDigraph[V]) Has(node V) bool {
+	_, ok := g.adj[node]
+	return ok
+}
+
+func (g *AdjacencyListDigraph[V]) Neighbours(node V) ([]V, bool) {
+	if l, ok := g.adj[node]; !ok {
+		return nil, false
+	} else if len(l) == 0 {
+		return nil, true
+	} else {
+		lCopy := make([]V, len(l))
+		copy(lCopy, l)
+		return lCopy, true
+	}
+}
+
 type line struct {
 	node string
-	outs string
+	outs []string
 }
 
 // String returns a string representation of the graph.
 // If V implements [fmt.Stringer], it will be used, otherwise
 // the default format for its underlying type is used.
 // Lines are sorted in lexicographic order of their nodes.
-// The neighbours of each node are output in arbitrary order.
+// The neighbours of each node are also output in lexicographic order.
 func (g *AdjacencyListDigraph[V]) String() string {
 	var lines []line
 
 	for node, to := range g.adj {
+		toStr := make([]string, len(to))
+		for i, neighbour := range to {
+			toStr[i] = fmt.Sprint(neighbour)
+		}
+		slices.Sort(toStr)
+
 		lines = append(lines, line{
 			node: fmt.Sprint(node),
-			outs: fmt.Sprint(to),
+			outs: toStr,
 		})
 	}
 
@@ -112,10 +135,13 @@ func (g *AdjacencyListDigraph[V]) String() string {
 	})
 
 	var sb strings.Builder
-	for i, l := range lines {
-		sb.WriteString(l.node)
-		sb.WriteString(" -> ")
-		sb.WriteString(l.outs)
+	for i, line := range lines {
+		sb.WriteString(line.node)
+		sb.WriteString(" ->")
+		for _, neighbour := range line.outs {
+			sb.WriteRune(' ')
+			sb.WriteString(neighbour)
+		}
 		if i < len(lines)-1 {
 			sb.WriteRune('\n')
 		}
