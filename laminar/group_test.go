@@ -50,8 +50,7 @@ func TestGroupParentCancellation(t *testing.T) {
 	two := g.NewTask("two", func(ctx context.Context) error {
 		t.Error("two ran")
 		return nil
-	})
-	two.After(one) // two will be blocked in the
+	}).After(one)
 
 	g.NewTask("three", func(ctx context.Context) error {
 		t.Error("three ran")
@@ -64,6 +63,8 @@ func TestGroupParentCancellation(t *testing.T) {
 	cancel() // cancel only after one has started, but before two can
 
 	assert.ErrorIs(t, g.Wait(), context.Canceled)
+
+	t.Log(g)
 
 	goleak.VerifyNone(t)
 }
@@ -82,22 +83,25 @@ func TestGroupTaskError(t *testing.T) {
 	})
 
 	three := g.NewTask("three", func(ctx context.Context) error {
-		t.Error("three ran") // queued but will not run
+		t.Error("three ran") // dequeued but exits in errgroup waiting for dependents
 		return nil
-	})
+	}).After(one, two)
 
 	four := g.NewTask("four", func(ctx context.Context) error {
-		t.Error("four ran") // never even queued
+		t.Error("four ran") // dequeued but may be waiting for errgroup
 		return nil
-	})
+	}).After(three)
 
-	three.After(one)
-	three.After(two)
-	four.After(three)
+	g.NewTask("five", func(ctx context.Context) error {
+		t.Error("five ran") // never dequeued
+		return nil
+	}).After(four)
 
 	assert.NoError(t, g.Start())
 
 	assert.ErrorContains(t, g.Wait(), "oops")
+
+	t.Log(g)
 
 	goleak.VerifyNone(t)
 }
@@ -161,10 +165,7 @@ func TestGroupDependTwice(t *testing.T) {
 	two := g.NewTask("two", func(ctx context.Context) error {
 		atomic.AddUint64(&twoTimes, 1)
 		return nil
-	})
-
-	two.After(one)
-	two.After(one)
+	}).After(one, one)
 
 	assert.NoError(t, g.Start())
 
@@ -172,6 +173,9 @@ func TestGroupDependTwice(t *testing.T) {
 
 	assert.EqualValues(t, 1, oneTimes)
 	assert.EqualValues(t, 1, twoTimes)
+
+	t.Log(g)
+	t.Logf("two.waitFor=%v", two.waitFor)
 
 	goleak.VerifyNone(t)
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"go.lepak.sg/playground/chops"
 	"go.lepak.sg/playground/graph"
@@ -16,6 +17,15 @@ const (
 	NoLimit int = -1
 )
 
+const (
+	taskCreated uint64 = iota
+	taskDequeued
+	taskWaitingForErrgroup
+	taskWaitingForDependents
+	taskRunning
+	taskFinished
+)
+
 type Task struct {
 	g       *Group
 	name    string
@@ -25,6 +35,9 @@ type Task struct {
 
 	// wgChan <-chan struct{}
 	// waitFor []<-chan struct{}
+
+	// atomic only
+	state uint64
 }
 
 type Group struct {
@@ -80,15 +93,23 @@ func (g *Group) NewTask(name string, f func(context.Context) error) *Task {
 	return t
 }
 
-// After establishes an ordering: before happens before this task.
+// After establishes an ordering: all befores complete
+// before this task starts.
 // After must not be called after the parent Group has started.
-func (t *Task) After(before *Task) {
-	if t == before {
-		panic("Task cannot depend on itself")
-	}
+// Only one goroutine may call After on any given Task at once.
+// However multiple goroutines may call After on different Tasks.
+// After returns its Task to make this pattern possible:
+//
+//	task := group.NewTask(...).After(beforeTask)
+func (t *Task) After(befores ...*Task) *Task {
+	for _, before := range befores {
+		if t == before {
+			panic("Task cannot depend on itself")
+		}
 
-	if t.g != before.g {
-		panic("Tasks not created from the same Group")
+		if t.g != before.g {
+			panic("Tasks not created from the same Group")
+		}
 	}
 
 	t.g.lock.Lock()
@@ -97,15 +118,41 @@ func (t *Task) After(before *Task) {
 		panic("Group already started")
 	}
 
-	t.g.graph.AddEdge(before, t)
+	for _, before := range befores {
+		t.g.graph.AddEdge(before, t)
+	}
 	t.g.lock.Unlock()
 
-	// possible to double-add, it should not affect correctness though
-	t.waitFor = append(t.waitFor, &before.wg)
+	for _, before := range befores {
+		// possible to double-add, it should not affect correctness though
+		t.waitFor = append(t.waitFor, &before.wg)
+	}
+
+	return t
 }
 
 func (t *Task) String() string {
-	return t.name
+	state := atomic.LoadUint64(&t.state)
+
+	var stateString string
+	switch state {
+	case taskCreated:
+		stateString = "created"
+	case taskDequeued:
+		stateString = "dequeued"
+	case taskWaitingForErrgroup:
+		stateString = "waiting for errgroup"
+	case taskWaitingForDependents:
+		stateString = "waiting for dependents"
+	case taskRunning:
+		stateString = "running"
+	case taskFinished:
+		stateString = "finished"
+	default:
+		stateString = "<unknown>"
+	}
+
+	return fmt.Sprintf("%s [%s]", t.name, stateString)
 }
 
 // Start starts the Tasks added to the Group in their dependency order.
@@ -140,6 +187,8 @@ func (g *Group) Start() error {
 	go func() {
 		defer g.starterWg.Done()
 		for _, task := range order {
+			atomic.StoreUint64(&task.state, taskDequeued)
+
 			select {
 			case <-g.egCtx.Done():
 				return
@@ -148,10 +197,14 @@ func (g *Group) Start() error {
 
 			task := task
 
+			atomic.StoreUint64(&task.state, taskWaitingForErrgroup)
 			task.wg.Add(1)
 			g.eg.Go(func() error {
 				defer task.wg.Done()
-				// unstable order in waitFor: will it deadlock?
+
+				atomic.StoreUint64(&task.state, taskWaitingForDependents)
+				// unstable order in waitFor
+				// won't deadlock since circular dependency isn't possible
 				for _, wg := range task.waitFor {
 					select {
 					case <-g.egCtx.Done():
@@ -163,6 +216,8 @@ func (g *Group) Start() error {
 					}
 				}
 
+				atomic.StoreUint64(&task.state, taskRunning)
+				defer atomic.StoreUint64(&task.state, taskFinished)
 				return task.f(g.egCtx)
 			})
 		}

@@ -51,14 +51,23 @@ func ExampleGroup() {
 		panic(err)
 	}
 
+	fmt.Println()
+	fmt.Println(g)
+	fmt.Println()
+
 	// Output:
 	// Group: started=false
-	// getOne -> sum
-	// getTwo -> sum
-	// sum ->
+	// getOne [created] -> sum [created]
+	// getTwo [created] -> sum [created]
+	// sum [created] ->
 	//
 	// getOne exits
 	// getTwo exits
 	// sum starts
 	// 3
+	//
+	// Group: started=true
+	// getOne [finished] -> sum [finished]
+	// getTwo [finished] -> sum [finished]
+	// sum [finished] ->
 }
