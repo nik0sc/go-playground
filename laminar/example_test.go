@@ -14,27 +14,50 @@ func ExampleGroup() {
 	var one, two int
 
 	getOne := g.NewTask("getOne", func(ctx context.Context) error {
-		time.Sleep(10 * time.Millisecond)
-		one = 1
+		// Context cancellation should be respected when blocking
+		// in a long-running operation. Here it's time.After, but
+		// in practice this would be some kind of I/O.
+		// In other words, pass ctx into http.NewRequestWithContext,
+		// sql.DB.QueryContext, etc...
+		select {
+		case <-time.After(10 * time.Millisecond):
+			one = 1
+		case <-ctx.Done():
+			fmt.Println("getOne context:" + ctx.Err().Error())
+		}
+
 		fmt.Println("getOne exits")
 		return nil
 	})
 
 	getTwo := g.NewTask("getTwo", func(ctx context.Context) error {
-		time.Sleep(20 * time.Millisecond)
-		two = 2
+		select {
+		case <-time.After(20 * time.Millisecond):
+			two = 2
+		case <-ctx.Done():
+			fmt.Println("getTwo context:" + ctx.Err().Error())
+		}
+
 		fmt.Println("getTwo exits")
 		return nil
 	})
 
-	sum := g.NewTask("sum", func(ctx context.Context) error {
+	g.NewTask("sum", func(ctx context.Context) error {
+		// If context is canceled before this starts,
+		// or if getOne or getTwo return an error,
+		// this won't start
 		fmt.Println("sum starts")
+
+		// This is race-free as the writes to one and two
+		// happen-before the reads here
 		fmt.Println(one + two)
 		return nil
-	})
+	}).After(getOne, getTwo)
 
-	sum.After(getOne)
-	sum.After(getTwo)
+	// The dependency graph looks like:
+	// getOne -.
+	//         |--> sum
+	// getTwo -`
 
 	// This will print the group state
 	// as well as its task relationships

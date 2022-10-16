@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.lepak.sg/playground/graph"
 	"go.uber.org/goleak"
+	"golang.org/x/sync/errgroup"
 )
 
 func TestGroupCycleDetection(t *testing.T) {
@@ -152,7 +153,7 @@ func TestGroupStartOnce(t *testing.T) {
 	}
 }
 
-func TestGroupDependTwice(t *testing.T) {
+func TestTaskDependTwice(t *testing.T) {
 	g := NewGroup(context.Background(), NoLimit)
 
 	var oneTimes, twoTimes uint64
@@ -178,4 +179,68 @@ func TestGroupDependTwice(t *testing.T) {
 	t.Logf("two.waitFor=%v", two.waitFor)
 
 	goleak.VerifyNone(t)
+}
+
+func TestTaskHighOutdegree(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	g := NewGroup(ctx, 2)
+
+	oneRunning := make(chan struct{})
+	one := g.NewTask("1", func(ctx context.Context) error {
+		close(oneRunning)
+		// <-(chan struct{})(nil) // block forever!
+		// return errors.New("oops")
+		return nil
+	})
+
+	two := g.NewTask("2", func(ctx context.Context) error {
+		return nil
+	}).After(one)
+
+	three := g.NewTask("3", func(ctx context.Context) error {
+		return nil
+	}).After(one)
+
+	four := g.NewTask("4", func(ctx context.Context) error {
+		return nil
+	}).After(one)
+
+	g.NewTask("5", func(ctx context.Context) error {
+		return nil
+	}).After(two, three, four)
+
+	assert.NoError(t, g.Start())
+	<-oneRunning
+	cancel()
+
+	assert.ErrorContains(t, g.Wait(), "canceled")
+
+	t.Log(g)
+
+	goleak.VerifyNone(t)
+}
+
+func TestErrgroupDirect(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	g, gCtx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		time.Sleep(10 * time.Millisecond)
+		t.Log("10ms")
+		return nil
+	})
+	g.Go(func() error {
+		select {
+		case <-time.After(30 * time.Millisecond):
+			t.Log("30ms")
+			return nil
+		case <-gCtx.Done():
+			t.Log("err:", gCtx.Err())
+		}
+		return nil
+	})
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	err := g.Wait()
+	t.Log(err)
+	_ = gCtx
 }
