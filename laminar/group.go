@@ -44,10 +44,8 @@ type Task struct {
 	name    string
 	f       func(context.Context) error
 	wg      sync.WaitGroup
-	waitFor []*sync.WaitGroup
-
-	// wgChan <-chan struct{}
-	// waitFor []<-chan struct{}
+	wgChan  <-chan struct{}
+	waitFor []<-chan struct{}
 
 	// atomic access only
 	// state may be read at any time by String method
@@ -59,6 +57,9 @@ type Group struct {
 	eg        *errgroup.Group
 	egCtx     context.Context
 	starterWg sync.WaitGroup
+
+	// protected by starterWg
+	savedCtxErr error
 
 	// protected by lock
 	lock    sync.Mutex
@@ -140,11 +141,6 @@ func (t *Task) After(befores ...*Task) *Task {
 	}
 	t.g.lock.Unlock()
 
-	for _, before := range befores {
-		// possible to double-add, it should not affect correctness though
-		t.waitFor = append(t.waitFor, &before.wg)
-	}
-
 	return t
 }
 
@@ -216,31 +212,45 @@ func (g *Group) starter(order []*Task) {
 
 		select {
 		case <-g.egCtx.Done():
+			// save the error here, so that if all previous tasks
+			// have entered the taskRunning state and don't return
+			// the context error, we'll know in Wait that at least
+			// one task was prevented from starting
+			g.savedCtxErr = g.egCtx.Err()
 			return
 		default:
 		}
 
 		task := task
 
-		atomic.StoreUint64(&task.state, taskWaitingForErrgroup)
+		dependents, ok := g.graph.Neighbours(task)
+		if !ok {
+			panic("order and neighbours inconsistent")
+		}
+
 		task.wg.Add(1)
+
+		for _, dependent := range dependents {
+			if task.wgChan == nil {
+				task.wgChan = chops.Wait(&task.wg)
+			}
+
+			dependent.waitFor = append(dependent.waitFor, task.wgChan)
+		}
+
+		atomic.StoreUint64(&task.state, taskWaitingForErrgroup)
 		g.eg.Go(func() error {
 			defer task.wg.Done()
 
 			atomic.StoreUint64(&task.state, taskWaitingForDependents)
 			// unstable order in waitFor
 			// won't deadlock since circular dependency isn't possible
-			for _, wg := range task.waitFor {
+			for _, doneCh := range task.waitFor {
 				select {
 				case <-g.egCtx.Done():
-					// return nil // ctx err will be returned anyway
+					// this is different from errgroup
 					return g.egCtx.Err()
-				case <-chops.Wait(wg):
-					// may be inefficient to do this for tasks that have high outdegree
-					// conversely, efficient for groups where only few tasks depend on others
-					// TODO: Optimize it so that before starting,
-					// we can preprocess each wg into a <-chan struct{} once
-					// and avoid doing it multiple times for high-outdegree tasks
+				case <-doneCh:
 				}
 			}
 
@@ -252,14 +262,23 @@ func (g *Group) starter(order []*Task) {
 }
 
 // Wait waits for all goroutines started in the Group to exit.
-// Note: even after this method returns, not all the Tasks may have run.
+// Wait returns the first error returned from any task, or else
+// any context error that prevented all tasks from starting.
+// If Wait returns nil, all tasks completed successfully.
 func (g *Group) Wait() error {
 	g.starterWg.Wait()
-	return g.eg.Wait()
+	err := g.eg.Wait()
+	if err == nil {
+		// g.egCtx will be canceled by g.eg.Wait so we can't
+		// return g.egCtx.Err directly, it will be too late
+		err = g.savedCtxErr
+	}
+	return err
 }
 
 // String returns the string representation of this Group.
 func (g *Group) String() string {
+	// locking in String is not optimal
 	g.lock.Lock()
 	started := g.started
 	graphStr := g.graph.String()

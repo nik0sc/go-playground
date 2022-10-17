@@ -44,12 +44,12 @@ func TestGroupParentCancellation(t *testing.T) {
 
 	one := g.NewTask("one", func(ctx context.Context) error {
 		close(oneRunning)
-		<-ctx.Done()
-		return ctx.Err()
+		// <-ctx.Done()
+		return nil
 	})
 
 	two := g.NewTask("two", func(ctx context.Context) error {
-		t.Error("two ran")
+		t.Log("two ran")
 		return nil
 	}).After(one)
 
@@ -61,7 +61,9 @@ func TestGroupParentCancellation(t *testing.T) {
 	assert.NoError(t, g.Start())
 
 	<-oneRunning
-	cancel() // cancel only after one has started, but before two can
+	cancel() // cancel only after one has started
+	// two may already be waiting for the errgroup, so it may run
+	// three should never run
 
 	assert.ErrorIs(t, g.Wait(), context.Canceled)
 
@@ -182,14 +184,9 @@ func TestTaskDependTwice(t *testing.T) {
 }
 
 func TestTaskHighOutdegree(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	g := NewGroup(ctx, 2)
+	g := NewGroup(context.Background(), 2)
 
-	oneRunning := make(chan struct{})
 	one := g.NewTask("1", func(ctx context.Context) error {
-		close(oneRunning)
-		// <-(chan struct{})(nil) // block forever!
-		// return errors.New("oops")
 		return nil
 	})
 
@@ -205,15 +202,22 @@ func TestTaskHighOutdegree(t *testing.T) {
 		return nil
 	}).After(one)
 
-	g.NewTask("5", func(ctx context.Context) error {
+	five := g.NewTask("5", func(ctx context.Context) error {
 		return nil
 	}).After(two, three, four)
 
 	assert.NoError(t, g.Start())
-	<-oneRunning
-	cancel()
 
-	assert.ErrorContains(t, g.Wait(), "canceled")
+	assert.NoError(t, g.Wait())
+
+	// test chan is copied correctly
+	assert.Len(t, two.waitFor, 1)
+	assert.Len(t, three.waitFor, 1)
+	assert.Len(t, four.waitFor, 1)
+	assert.Equal(t, one.wgChan, two.waitFor[0])
+	assert.Equal(t, two.waitFor[0], three.waitFor[0])
+	assert.Equal(t, three.waitFor[0], four.waitFor[0])
+	assert.ElementsMatch(t, []<-chan struct{}{two.wgChan, three.wgChan, four.wgChan}, five.waitFor)
 
 	t.Log(g)
 
