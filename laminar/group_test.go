@@ -218,6 +218,8 @@ func TestTaskHighOutdegree(t *testing.T) {
 	assert.Equal(t, two.waitFor[0], three.waitFor[0])
 	assert.Equal(t, three.waitFor[0], four.waitFor[0])
 	assert.ElementsMatch(t, []<-chan struct{}{two.wgChan, three.wgChan, four.wgChan}, five.waitFor)
+	// test chan is created on demand
+	assert.Nil(t, five.wgChan)
 
 	t.Log(g)
 

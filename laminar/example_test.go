@@ -11,6 +11,10 @@ func ExampleGroup() {
 	// then sums them up after both operations complete.
 	g := NewGroup(context.Background(), NoLimit)
 
+	// Since tasks cannot return values to their dependents,
+	// they can instead communicate with shared variables
+	// captured by the anonymous functions passed to NewTask.
+	// If this is too unidiomatic, channels could be shared too.
 	var one, two int
 
 	getOne := g.NewTask("getOne", func(ctx context.Context) error {
@@ -23,7 +27,7 @@ func ExampleGroup() {
 		case <-time.After(10 * time.Millisecond):
 			one = 1
 		case <-ctx.Done():
-			fmt.Println("getOne context:" + ctx.Err().Error())
+			fmt.Println("getOne context:", ctx.Err().Error())
 		}
 
 		fmt.Println("getOne exits")
@@ -35,7 +39,7 @@ func ExampleGroup() {
 		case <-time.After(20 * time.Millisecond):
 			two = 2
 		case <-ctx.Done():
-			fmt.Println("getTwo context:" + ctx.Err().Error())
+			fmt.Println("getTwo context:", ctx.Err().Error())
 		}
 
 		fmt.Println("getTwo exits")
@@ -57,7 +61,11 @@ func ExampleGroup() {
 	// The dependency graph looks like:
 	// getOne -.
 	//         |--> sum
-	// getTwo -`
+	// getTwo -'
+	//
+	// The execution order of getOne relative to getTwo is
+	// not guaranteed, however it is guaranteed that sum
+	// starts after getOne and getTwo finish.
 
 	// This will print the group state
 	// as well as its task relationships

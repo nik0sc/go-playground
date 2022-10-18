@@ -97,9 +97,7 @@ func (g *AdjacencyListDigraph[V]) Neighbours(node V) ([]V, bool) {
 	} else if len(l) == 0 {
 		return nil, true
 	} else {
-		lCopy := make([]V, len(l))
-		copy(lCopy, l)
-		return lCopy, true
+		return slices.Clone(l), true
 	}
 }
 
@@ -129,7 +127,6 @@ func (g *AdjacencyListDigraph[V]) String() string {
 		})
 	}
 
-	// TODO: if V implements sort.Interface it should be used too
 	sort.Slice(lines, func(i, j int) bool {
 		return lines[i].node < lines[j].node
 	})

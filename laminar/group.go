@@ -14,6 +14,17 @@ package laminar
 // https://github.com/natessilva/dag
 // https://github.com/kamildrazkiewicz/go-flow
 
+// TODO list:
+// - group restart? what is the use case? when should this be allowed?
+// - pass return values from one task to another? could get messy
+// - expose task status directly? encourages racy behaviour as only
+//   taskFinished is useful outside the group. only allow status to be
+//   read after Group.Wait returns?
+//   - subset: expose task success/fail status directly? to recover
+//     from failure?
+// - what to do about disconnected components?
+// - improve test coverage of edge cases??
+
 import (
 	"context"
 	"fmt"
@@ -88,7 +99,8 @@ func NewGroup(ctx context.Context, limit int) *Group {
 
 // NewTask creates a new Task in this Group. f accepts a context that is
 // canceled after any other f passed to NewTask returns an error.
-// name is shown when g.String() is called.
+// name is shown when g.String() is called. There is no "get task by name"
+// method: instead, retain the *Task and use it directly.
 // NewTask must not be called after Start.
 func (g *Group) NewTask(name string, f func(context.Context) error) *Task {
 	t := &Task{
@@ -176,25 +188,20 @@ func (t *Task) String() string {
 // multiple starts of the same group, created anew with the same
 // dependency graph.
 func (g *Group) Start() error {
-	var order []*Task
-	var err error
 	g.lock.Lock()
 
-	func() {
-		defer g.lock.Unlock()
+	if g.started {
+		g.lock.Unlock()
+		panic("Group already started")
+	}
 
-		if g.started {
-			panic("Group already started")
-		}
+	// prevents concurrent Start, but also prevents
+	// dependency graph from changing under our feet
+	g.started = true
+	g.lock.Unlock()
 
-		g.started = true
-
-		order, err = g.graph.TopologicalOrder()
-		if err != nil {
-			return
-		}
-	}()
-
+	// now graph will not change
+	order, err := g.graph.TopologicalOrder()
 	if err != nil {
 		return err
 	}
