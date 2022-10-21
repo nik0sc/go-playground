@@ -15,6 +15,7 @@ var ErrCycleDetected = errors.New("cycle detected")
 // an adjacency list representation.
 // V should be a small type (int-sized, one machine word)
 // for best performance.
+// Multiple edges between vertices are not supported.
 type AdjacencyListDigraph[V comparable] struct {
 	adj map[V][]V
 }
@@ -37,6 +38,7 @@ func (g *AdjacencyListDigraph[V]) AddNode(node V) bool {
 }
 
 // AddEdge adds an edge to the graph.
+// Duplicate edges are not supported.
 func (g *AdjacencyListDigraph[V]) AddEdge(from, to V) {
 	fromList := g.adj[from]
 	if len(fromList) == 0 {
@@ -46,6 +48,7 @@ func (g *AdjacencyListDigraph[V]) AddEdge(from, to V) {
 	}
 
 	if !g.AddNode(to) {
+		// check for duplicate, but it may take O(E) time
 		for _, tail := range fromList {
 			if tail == to {
 				return
@@ -56,12 +59,69 @@ func (g *AdjacencyListDigraph[V]) AddEdge(from, to V) {
 	g.adj[from] = append(g.adj[from], to)
 }
 
+// RemoveNode removes a vertex from the graph. It will
+// also remove all edges that start or end from this vertex.
+// It returns true if the vertex exists and was removed.
 func (g *AdjacencyListDigraph[V]) RemoveNode(node V) bool {
-	return false // TODO
+	_, ok := g.adj[node]
+	if !ok {
+		return false
+	}
+
+	// removes node and its out-edges
+	delete(g.adj, node)
+
+	// if V is a pointer, this prevents the truncated l[len(l)-1]
+	// from keeping *V alive
+	var zeroV V
+
+	// need to search the entire graph for in-edges
+	// remove the in-edges in place, no need to add allocations
+	// to an O(E) operation
+	for n, l := range g.adj {
+		for i, to := range l {
+			if to == node {
+				// assignment is evaluated left to right,
+				// so if i = 0 and len(l) = 1,
+				// assignment of zeroV takes precedence
+				l[i], l[len(l)-1] = l[len(l)-1], zeroV
+
+				l = l[:len(l)-1]
+				g.adj[n] = l
+
+				// after this, l iterator cannot be safely used
+				// as there is a risk of running off the end of l
+				// because the iterator does not check len(l) on
+				// every iteration
+				break
+			}
+		}
+	}
+
+	return true
 }
 
+// RemoveEdge removes an edge from the graph. It returns true
+// if the edge exists and was removed.
+// If more than one edge exists, only one will be removed.
 func (g *AdjacencyListDigraph[V]) RemoveEdge(from, to V) bool {
-	return false // TODO
+	l, ok := g.adj[from]
+	if !ok {
+		return false
+	}
+
+	i := slices.Index(l, to)
+	if i == -1 {
+		return false
+	}
+
+	// if V is a pointer, this prevents the truncated l[len(l)-1]
+	// from keeping *V alive
+	var zeroV V
+	// since order in the slice doesn't matter
+	l[i], l[len(l)-1] = l[len(l)-1], zeroV
+	g.adj[from] = l[:len(l)-1]
+	return true
 }
 
 func (g *AdjacencyListDigraph[V]) Nodes() []V {
@@ -127,6 +187,11 @@ func (g *AdjacencyListDigraph[V]) String() string {
 		})
 	}
 
+	// if V fulfils constraints.Ordered,
+	// it would be nice to use the node directly
+	// instead of its string representation,
+	// however there is no way to tell right now
+	// without relying on reflection
 	sort.Slice(lines, func(i, j int) bool {
 		return lines[i].node < lines[j].node
 	})
@@ -189,32 +254,47 @@ func (d *DepthFirstNode[V]) String() string {
 	return fmt.Sprintf("%d/%d (parent:%v)", d.discover, d.finish, d.parent)
 }
 
-type depthFirst[V comparable] struct {
-	g      *AdjacencyListDigraph[V]
-	states map[V]*DepthFirstNode[V] // node in map = coloured
-	time   int
-}
-
 // DepthFirst ...
-func (g *AdjacencyListDigraph[V]) DepthFirst(less func(a, b V) bool) map[V]*DepthFirstNode[V] {
-	s := &depthFirst[V]{
-		g:      g,
-		states: make(map[V]*DepthFirstNode[V]),
-	}
-
+func (g *AdjacencyListDigraph[V]) DepthFirst(less func(a, b V) bool, f func(V)) map[V]*DepthFirstNode[V] {
 	vorder := g.Nodes()
 	if less != nil {
 		slices.SortFunc(vorder, less)
 	}
 
-	// depth first is not deterministic!
+	states := make(map[V]*DepthFirstNode[V]) // node in map = coloured
+	var time int                             // current time for visit
+	// name must be declared before function body
+	var visit func(V)
+	visit = func(node V) {
+		time++
+		states[node] = &DepthFirstNode[V]{
+			discover: time,
+		}
+
+		if f != nil {
+			f(node)
+		}
+
+		for _, next := range g.adj[node] {
+			if _, ok := states[next]; !ok {
+				visit(next)
+				states[next].parent = node
+			}
+		}
+
+		time++
+		states[node].finish = time
+	}
+
+	// depth first is not deterministic,
+	// but with a pre-sort we can make it deterministic
 	for _, node := range vorder {
-		if _, ok := s.states[node]; !ok {
-			s.visit(node)
+		if _, ok := states[node]; !ok {
+			visit(node)
 		}
 	}
 
-	return s.states
+	return states
 }
 
 // TopologicalOrder tries to generate a topological order for all vertices.
@@ -294,21 +374,4 @@ func (g *AdjacencyListDigraph[V]) TopologicalOrder() (order []V, err error) {
 	}
 
 	return order, nil
-}
-
-func (df *depthFirst[V]) visit(node V) {
-	df.time++
-	df.states[node] = &DepthFirstNode[V]{
-		discover: df.time,
-	}
-
-	for _, next := range df.g.adj[node] {
-		if _, ok := df.states[next]; !ok {
-			df.visit(next)
-			df.states[next].parent = node
-		}
-	}
-
-	df.time++
-	df.states[node].finish = df.time
 }

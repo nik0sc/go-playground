@@ -1,7 +1,11 @@
 package graph
 
 import (
+	"reflect"
+	"runtime"
+	"sync/atomic"
 	"testing"
+	"unsafe"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -135,4 +139,86 @@ func TestAdjacencyListDigraph_TopologicalOrder(t *testing.T) {
 	order, err = clrs1().TopologicalOrder()
 	assert.Empty(t, order)
 	assert.ErrorIs(t, err, ErrCycleDetected)
+}
+
+func TestAdjacencyListDigraph_RemoveNode(t *testing.T) {
+	tests := []struct {
+		name   string
+		setup  func() *AdjacencyListDigraph[int]
+		remove int
+		want   bool
+		then   func(g *AdjacencyListDigraph[int])
+	}{
+		{
+			name: "Remove not found",
+			setup: func() *AdjacencyListDigraph[int] {
+				g := NewAdjacencyListDigraph[int]()
+
+				g.AddEdge(1, 2)
+
+				return g
+			},
+			remove: 3,
+			want:   false,
+			then: func(g *AdjacencyListDigraph[int]) {
+				assert.EqualValues(t, map[int][]int{
+					1: {2},
+					2: nil,
+				}, g.adj)
+			},
+		},
+		{
+			name:   "Remove middle, parent has single child and it is the node",
+			setup:  linkedlist,
+			remove: 3,
+			want:   true,
+			then: func(g *AdjacencyListDigraph[int]) {
+				assert.EqualValues(t, map[int][]int{
+					1: {2},
+					2: {}, // not nil
+					4: {5},
+					5: nil,
+				}, g.adj)
+
+				assert.ElementsMatch(t, g.Edges(), [][2]int{{1, 2}, {4, 5}})
+
+				l := g.adj[2]
+				assert.GreaterOrEqual(t, 1, cap(l))
+				buf := (*int)(unsafe.Pointer(reflect.ValueOf(l).Pointer()))
+				assert.Equal(t, *buf, 0, "truncated data was not zeroed")
+				assert.Equal(t, l[:1], []int{0}, "truncated data was not zeroed")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := tt.setup()
+			assert.Equal(t, tt.want, g.RemoveNode(tt.remove))
+			tt.then(g)
+		})
+	}
+}
+
+func TestAdjacencyListDigraph_RemoveNode_GCFinalizer(t *testing.T) {
+	g := NewAdjacencyListDigraph[*int]()
+
+	one, two, three := 1, 2, 3
+
+	var threeFinalized int64
+
+	g.AddEdge(&one, &two)
+	g.AddEdge(&one, &three)
+
+	runtime.SetFinalizer(&three, func(_ *int) {
+		atomic.StoreInt64(&threeFinalized, 1)
+	})
+
+	g.RemoveNode(&three)
+
+	// runtime.KeepAlive(&three)
+
+	runtime.GC()
+
+	assert.EqualValues(t, 1, atomic.LoadInt64(&threeFinalized))
 }
