@@ -124,6 +124,7 @@ func (g *AdjacencyListDigraph[V]) RemoveEdge(from, to V) bool {
 	return true
 }
 
+// Nodes returns all vertices in the graph, in no particular order.
 func (g *AdjacencyListDigraph[V]) Nodes() []V {
 	nodes := make([]V, 0, len(g.adj))
 
@@ -134,6 +135,9 @@ func (g *AdjacencyListDigraph[V]) Nodes() []V {
 	return nodes
 }
 
+// Edges returns all edges in the graph, in no particular order.
+// The inner pair of V, which represents one edge,
+// is in the order {tail, head}.
 func (g *AdjacencyListDigraph[V]) Edges() [][2]V {
 	edges := make([][2]V, 0, len(g.adj)) // just a guess for capacity
 
@@ -146,11 +150,14 @@ func (g *AdjacencyListDigraph[V]) Edges() [][2]V {
 	return edges
 }
 
+// Has returns true if the vertex provided is in the graph.
 func (g *AdjacencyListDigraph[V]) Has(node V) bool {
 	_, ok := g.adj[node]
 	return ok
 }
 
+// Neighbours returns all neighbours of the vertex, in no particular order.
+// (nil, false) is returned if the vertex is not in the graph.
 func (g *AdjacencyListDigraph[V]) Neighbours(node V) ([]V, bool) {
 	if l, ok := g.adj[node]; !ok {
 		return nil, false
@@ -245,30 +252,44 @@ func (g *AdjacencyListDigraph[V]) ShortestDistance(from V) (
 	return
 }
 
+// DepthFirstNode describes a node in a depth-first traversal.
 type DepthFirstNode[V comparable] struct {
-	discover, finish int
-	parent           V
+	// Discover is the time when the node was discovered.
+	Discover int
+	// Finish is the time when the node's children were fully explored.
+	Finish int
+	// Parent is the parent of this node.
+	Parent V
 }
 
 func (d *DepthFirstNode[V]) String() string {
-	return fmt.Sprintf("%d/%d (parent:%v)", d.discover, d.finish, d.parent)
+	return fmt.Sprintf("%d/%d (parent:%v)", d.Discover, d.Finish, d.Parent)
 }
 
-// DepthFirst ...
-func (g *AdjacencyListDigraph[V]) DepthFirst(less func(a, b V) bool, f func(V)) map[V]*DepthFirstNode[V] {
+// DepthFirst traverses the graph in depth-first order.
+// If less is provided, it is used to pre-sort the graph's nodes
+// before starting the traversal (see [slices.SortFunc]), which can make
+// the traversal deterministic.
+// If f is provided, it is called when a node is discovered.
+func (g *AdjacencyListDigraph[V]) DepthFirst(
+	less func(a, b V) bool, f func(V),
+) map[V]*DepthFirstNode[V] {
 	vorder := g.Nodes()
 	if less != nil {
 		slices.SortFunc(vorder, less)
 	}
 
-	states := make(map[V]*DepthFirstNode[V]) // node in map = coloured
-	var time int                             // current time for visit
+	// node in map = coloured
+	states := make(map[V]*DepthFirstNode[V], len(vorder))
+	// current time for visit
+	var time int
+
 	// name must be declared before function body
 	var visit func(V)
 	visit = func(node V) {
 		time++
 		states[node] = &DepthFirstNode[V]{
-			discover: time,
+			Discover: time,
 		}
 
 		if f != nil {
@@ -278,12 +299,12 @@ func (g *AdjacencyListDigraph[V]) DepthFirst(less func(a, b V) bool, f func(V)) 
 		for _, next := range g.adj[node] {
 			if _, ok := states[next]; !ok {
 				visit(next)
-				states[next].parent = node
+				states[next].Parent = node
 			}
 		}
 
 		time++
-		states[node].finish = time
+		states[node].Finish = time
 	}
 
 	// depth first is not deterministic,
@@ -354,13 +375,15 @@ func (g *AdjacencyListDigraph[V]) TopologicalOrder() (order []V, err error) {
 		order[i] = v
 		i--
 		if i == -1 && len(toVisit) != 1 {
-			panic("reached start of order, but after the current node, toVisit still contains nodes")
+			panic("reached start of order, " +
+				"but after the current node, toVisit still contains nodes")
 		}
 
 		seen[v] = 2 // fully explored the branch
 
 		if _, ok := toVisit[v]; !ok {
-			panic(fmt.Errorf("dequeue v not found: v=%v toVisit=%v", v, toVisit))
+			panic(fmt.Errorf("dequeue v not found: v=%v toVisit=%v",
+				v, toVisit))
 		}
 		delete(toVisit, v)
 	}

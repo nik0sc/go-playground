@@ -2,8 +2,6 @@ package graph
 
 import (
 	"reflect"
-	"runtime"
-	"sync/atomic"
 	"testing"
 	"unsafe"
 
@@ -198,27 +196,4 @@ func TestAdjacencyListDigraph_RemoveNode(t *testing.T) {
 			tt.then(g)
 		})
 	}
-}
-
-func TestAdjacencyListDigraph_RemoveNode_GCFinalizer(t *testing.T) {
-	g := NewAdjacencyListDigraph[*int]()
-
-	one, two, three := 1, 2, 3
-
-	var threeFinalized int64
-
-	g.AddEdge(&one, &two)
-	g.AddEdge(&one, &three)
-
-	runtime.SetFinalizer(&three, func(_ *int) {
-		atomic.StoreInt64(&threeFinalized, 1)
-	})
-
-	g.RemoveNode(&three)
-
-	// runtime.KeepAlive(&three)
-
-	runtime.GC()
-
-	assert.EqualValues(t, 1, atomic.LoadInt64(&threeFinalized))
 }
