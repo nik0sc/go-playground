@@ -74,8 +74,17 @@ type Group struct {
 
 	// protected by lock
 	lock    sync.Mutex
-	graph   *graph.AdjacencyListDigraph[*Task]
+	graph   graphInterface
 	started bool
+}
+
+// Any graph implementation must support these 5 methods
+type graphInterface interface {
+	AddNode(*Task) bool
+	AddEdge(*Task, *Task)
+	Neighbours(*Task) ([]*Task, bool)
+	TopologicalOrder() ([]*Task, error)
+	String() string
 }
 
 // NewGroup creates a new Group. It accepts a context from which
@@ -242,6 +251,13 @@ func (g *Group) starter(order []*Task) {
 				task.wgChan = chops.Wait(&task.wg)
 			}
 
+			// this is thread-safe:
+			// there is only one goroutine appending to any waitFor slice
+			// (this one, running starter)
+			// there may be multiple goroutines reading from waitFor,
+			// depending on the group limit, but any goroutine will always
+			// read after this write has finished, because of the
+			// topological order
 			dependent.waitFor = append(dependent.waitFor, task.wgChan)
 		}
 
@@ -263,7 +279,11 @@ func (g *Group) starter(order []*Task) {
 
 			atomic.StoreUint64(&task.state, taskRunning)
 			defer atomic.StoreUint64(&task.state, taskFinished)
-			return task.f(g.egCtx)
+			err := task.f(g.egCtx)
+			if err != nil {
+				err = fmt.Errorf("%s: %w", task.name, err)
+			}
+			return err
 		})
 	}
 }

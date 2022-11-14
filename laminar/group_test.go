@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.lepak.sg/playground/graph"
 	"go.uber.org/goleak"
-	"golang.org/x/sync/errgroup"
 )
 
 func TestGroupCycleDetection(t *testing.T) {
@@ -37,14 +36,14 @@ func TestGroupCycleDetection(t *testing.T) {
 func TestGroupParentCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// g := NewGroup(ctx, NoLimit)
 	g := NewGroup(ctx, 1)
 
-	oneRunning := make(chan struct{})
-
 	one := g.NewTask("one", func(ctx context.Context) error {
-		close(oneRunning)
-		// <-ctx.Done()
+		cancel() // cancel only after one has started
+		// two may already be waiting for the errgroup,
+		// and once in the errgroup, one's doneCh may be selected
+		// instead of ctx.Done, so it may run
+		// three should never run
 		return nil
 	})
 
@@ -60,11 +59,6 @@ func TestGroupParentCancellation(t *testing.T) {
 
 	assert.NoError(t, g.Start())
 
-	<-oneRunning
-	cancel() // cancel only after one has started
-	// two may already be waiting for the errgroup, so it may run
-	// three should never run
-
 	assert.ErrorIs(t, g.Wait(), context.Canceled)
 
 	t.Log(g)
@@ -76,7 +70,6 @@ func TestGroupTaskError(t *testing.T) {
 	g := NewGroup(context.Background(), 2)
 
 	one := g.NewTask("one", func(ctx context.Context) error {
-		<-ctx.Done()
 		return nil
 	})
 
@@ -102,7 +95,7 @@ func TestGroupTaskError(t *testing.T) {
 
 	assert.NoError(t, g.Start())
 
-	assert.ErrorContains(t, g.Wait(), "oops")
+	assert.ErrorContains(t, g.Wait(), "two: oops")
 
 	t.Log(g)
 
@@ -224,29 +217,4 @@ func TestTaskHighOutdegree(t *testing.T) {
 	t.Log(g)
 
 	goleak.VerifyNone(t)
-}
-
-func TestErrgroupDirect(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	g, gCtx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		time.Sleep(10 * time.Millisecond)
-		t.Log("10ms")
-		return nil
-	})
-	g.Go(func() error {
-		select {
-		case <-time.After(30 * time.Millisecond):
-			t.Log("30ms")
-			return nil
-		case <-gCtx.Done():
-			t.Log("err:", gCtx.Err())
-		}
-		return nil
-	})
-	time.Sleep(20 * time.Millisecond)
-	cancel()
-	err := g.Wait()
-	t.Log(err)
-	_ = gCtx
 }
