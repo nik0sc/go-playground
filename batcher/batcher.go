@@ -43,13 +43,23 @@ func Batch[T any](
 	in <-chan T, out chan<- []T, threshold int, interval time.Duration,
 	prealloc bool,
 ) {
+	batch(in, out, threshold, interval, prealloc, true)
+}
+
+func batch[T any](
+	in <-chan T, out chan<- []T, threshold int, interval time.Duration,
+	prealloc, shouldClose bool,
+) {
 	var t *time.Timer
+
+	if shouldClose {
+		defer close(out)
+	}
 
 	for {
 		// only proceed once there is at least one item
 		item, ok := <-in
 		if !ok {
-			close(out)
 			return
 		}
 
@@ -80,7 +90,6 @@ func Batch[T any](
 					out <- slice
 					t.Stop()
 					// never using t again, don't care about draining t.C
-					close(out)
 					return
 				}
 

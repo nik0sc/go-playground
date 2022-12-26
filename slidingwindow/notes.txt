@@ -1,0 +1,15 @@
+Hint=0
+
+    counter_test.go:113: len of map: 10
+    counter_test.go:115: &{count:10 flags:0 B:1 noverflow:1 hash0:438859468}
+BenchmarkCounter_SmallWindow-4                 1        97225371000 ns/op       2080114440 B/op 20000987 allocs/op
+
+Hint=20
+    counter_test.go:113: len of map: 10
+    counter_test.go:115: &{count:10 flags:0 B:2 noverflow:1 hash0:2927081159}
+BenchmarkCounter_SmallWindow-4                 1        88834964500 ns/op       12456912 B/op      95371 allocs/op
+
+Hint=1000
+    counter_test.go:113: len of map: 10
+    counter_test.go:115: &{count:10 flags:0 B:8 noverflow:0 hash0:3622802727}
+BenchmarkCounter_SmallWindow-4                 1        49614926500 ns/op         910448 B/op      11020 allocs/op

@@ -3,6 +3,8 @@
 // It also provides utility functions for working with counters.
 package counter
 
+import "golang.org/x/exp/constraints"
+
 // Counter counts occurrences of each element of the slice
 // and returns a map of elements to their counts.
 func Counter[S ~[]E, E comparable](slice S) map[E]int {
@@ -46,6 +48,18 @@ func Total[E comparable](ctr map[E]int) int {
 
 	for _, cnt := range ctr {
 		sum += cnt
+	}
+
+	return sum
+}
+
+func Average[E constraints.Integer | constraints.Float](ctr map[E]int) float64 {
+	var sum float64
+
+	total := float64(Total(ctr))
+
+	for elem, cnt := range ctr {
+		sum += float64(elem) * float64(cnt) / total
 	}
 
 	return sum
