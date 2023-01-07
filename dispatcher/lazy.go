@@ -19,13 +19,17 @@ type Acceptor[T Keyer] interface {
 	Close()
 }
 
+// only hold on to the key, not the dispatched item
+// to avoid keeping it alive for too long
+// also because Keyer should not imply comparable
+type counter interface {
+	Observe(string)
+}
+
 type Lazy[T Keyer] struct {
-	lock   sync.RWMutex
-	active map[string]Acceptor[T]
-	// only hold on to the key, not the dispatched item
-	// to avoid keeping it alive for too long
-	// also because Keyer should not imply comparable
-	window  *slidingwindow.Counter[string]
+	lock    sync.RWMutex
+	active  map[string]Acceptor[T]
+	window  counter
 	factory func(string) Acceptor[T]
 }
 
@@ -41,7 +45,8 @@ func NewLazy[T Keyer](
 		windowSize = defaultWindow
 	}
 
-	ld.window = slidingwindow.NewCounter(windowSize, keyCardinality, ld.cleanup)
+	ld.window = slidingwindow.NewLocked(slidingwindow.NewCounter(
+		windowSize, keyCardinality, ld.cleanup))
 
 	return ld
 }
@@ -56,10 +61,6 @@ func (ld *Lazy[T]) Accept(item T) {
 	}
 
 	dest, ok := ld.active[key]
-	if ok {
-		// XXX Multiple rlock holders should not access window?
-		ld.window.Observe(key)
-	}
 	ld.lock.RUnlock()
 
 	if !ok {
@@ -74,10 +75,10 @@ func (ld *Lazy[T]) Accept(item T) {
 			dest = ld.factory(key)
 			ld.active[key] = dest
 		}
-		ld.window.Observe(key)
 		ld.lock.Unlock()
 	}
 
+	ld.window.Observe(key)
 	dest.Accept(item)
 }
 

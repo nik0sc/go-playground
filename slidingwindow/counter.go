@@ -1,7 +1,10 @@
 package slidingwindow
 
 import (
+	"fmt"
 	"reflect"
+	"runtime"
+	"sync"
 
 	"golang.org/x/exp/maps"
 )
@@ -13,8 +16,8 @@ import (
 // if the size is 10, then the 11th observation will replace
 // the 1st observation from the Counter.
 //
-// NewCounter is not safe for concurrent use. If you want to share it
-// across multiple goroutines, it must be protected by a mutex. In this case,
+// Counter is not safe for concurrent use. If you want to share it
+// across multiple goroutines, use LockedCounter instead. In this case,
 // the cardinalityHint should be set to a sufficiently large value, to minimize
 // time spent in Observe holding the mutex.
 // See NewCounter for more details on cardinalityHint.
@@ -155,4 +158,64 @@ func (c *Counter[T]) Observe(value T) {
 		c.head = 0
 	}
 	c.current[value] += 1
+}
+
+func (c *Counter[T]) String() string {
+	funcname := runtime.FuncForPC(reflect.ValueOf(c.evict).Pointer()).Name()
+
+	return fmt.Sprintf("&{window:%v head:%d lifetime:%d "+
+		"evictfuncname:%s current:%v}",
+		c.window, c.head, c.lifetime, funcname, c.current)
+}
+
+// LockedCounter is a wrapper for Counter that takes a lock
+// before any method is called.
+type LockedCounter[T comparable] struct {
+	lk sync.Mutex
+	ct *Counter[T]
+}
+
+// NewLocked wraps a Counter, making it thread-safe.
+// Do not retain the *Counter that is passed in.
+func NewLocked[T comparable](
+	counter *Counter[T],
+) *LockedCounter[T] {
+	return &LockedCounter[T]{
+		ct: counter,
+	}
+}
+
+func (lc *LockedCounter[T]) Get(value T) int {
+	lc.lk.Lock()
+	defer lc.lk.Unlock()
+
+	return lc.ct.Get(value)
+}
+
+func (lc *LockedCounter[T]) GetAll() map[T]int {
+	lc.lk.Lock()
+	defer lc.lk.Unlock()
+
+	return lc.ct.GetAll()
+}
+
+func (lc *LockedCounter[T]) Lifetime() int {
+	lc.lk.Lock()
+	defer lc.lk.Unlock()
+
+	return lc.ct.Lifetime()
+}
+
+func (lc *LockedCounter[T]) Observe(value T) {
+	lc.lk.Lock()
+	defer lc.lk.Unlock()
+
+	lc.ct.Observe(value)
+}
+
+func (lc *LockedCounter[T]) String() string {
+	lc.lk.Lock()
+	defer lc.lk.Unlock()
+
+	return lc.ct.String()
 }

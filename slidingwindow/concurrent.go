@@ -1,7 +1,10 @@
 package slidingwindow
 
 import (
+	"fmt"
 	"math"
+	"reflect"
+	"runtime"
 	"sync"
 	"sync/atomic"
 
@@ -33,6 +36,24 @@ func unpack(fused uint64) (head uint32, lifetime uint32) {
 
 func pack(head uint32, lifetime uint32) uint64 {
 	return (uint64(head) << 32) | uint64(lifetime)
+}
+
+func (c *ConcurrentCounter[T]) String() string {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	funcname := runtime.FuncForPC(reflect.ValueOf(c.evict).Pointer()).Name()
+
+	head, lifetime := unpack(c.fusedHeadLifetime)
+
+	current := make(map[T]entry)
+	for value, e := range c.current {
+		current[value] = *e
+	}
+
+	return fmt.Sprintf("&{window:%v evictfuncname:%s head:%d lifetime:%d "+
+		"current:%+v codemap:%+v}",
+		c.window, funcname, head, lifetime, current, c.codemap)
 }
 
 func NewConcurrentCounter[T comparable](
@@ -101,13 +122,16 @@ func (c *ConcurrentCounter[T]) Lifetime() int {
 
 func (c *ConcurrentCounter[T]) Observe(value T) {
 	size := uint32(len(c.window))
-	var oldHead, newHead, lifetime uint32
+	var oldHead, lifetime, evicteeCode, code uint32
+	var evictee T
+	var evicteeEntryPtr *entry
+	var evicteeReadOk bool
 
 	for {
 		packed := atomic.LoadUint64(&c.fusedHeadLifetime)
 		oldHead, lifetime = unpack(packed)
 		lifetime += 1
-		newHead = oldHead + 1
+		newHead := oldHead + 1
 		if newHead >= size {
 			newHead = 0
 		}
@@ -118,10 +142,12 @@ func (c *ConcurrentCounter[T]) Observe(value T) {
 		}
 	}
 
-	var code uint32
+	evicteeCode = atomic.LoadUint32(&c.window[oldHead])
 
 	c.lock.RLock()
 	entryPtr, ok := c.current[value]
+	evictee = c.codemap[evicteeCode]
+	evicteeEntryPtr, evicteeReadOk = c.current[evictee]
 	c.lock.RUnlock()
 
 	if !ok || entryPtr == nil {
@@ -132,11 +158,11 @@ func (c *ConcurrentCounter[T]) Observe(value T) {
 		if !ok || entryPtr == nil {
 			code = lifetime
 			entryPtr = &entry{
-				code:  code,
+				code:  lifetime, //code,
 				count: 1,
 			}
 			c.current[value] = entryPtr
-			c.codemap[code] = value
+			c.codemap[lifetime] = value
 		} else {
 			atomic.AddInt32(&entryPtr.count, 1)
 			code = entryPtr.code
@@ -147,43 +173,43 @@ func (c *ConcurrentCounter[T]) Observe(value T) {
 		code = entryPtr.code
 	}
 
+	atomic.StoreUint32(&c.window[oldHead], code)
+
 	needEvict := lifetime > size
 	if needEvict {
-	again:
-		evicteeCode := atomic.LoadUint32(&c.window[oldHead])
-		c.lock.RLock()
-		evictee := c.codemap[evicteeCode]
-		evicteeEntryPtr, ok := c.current[evictee]
-		c.lock.RUnlock()
 
-		if !ok || evicteeEntryPtr == nil {
-			panic("evictee is not in current")
+		if !evicteeReadOk || evicteeEntryPtr == nil {
+			// Already evicted 1->0 by another goroutine
+			// Do nothing
+			return
+			// panic("evictee is not in current")
 		}
-		oldCount := atomic.LoadInt32(&evicteeEntryPtr.count)
-		updatedCount := oldCount - 1
+		var oldCount, updatedCount int32
 
-		if updatedCount > 0 {
-			for {
-				// XXX this is wrong
-				if !atomic.CompareAndSwapInt32(&evicteeEntryPtr.count, oldCount, updatedCount) {
-					goto again
-				}
+		for {
+			oldCount = atomic.LoadInt32(&evicteeEntryPtr.count)
+			updatedCount = oldCount - 1
+			if atomic.CompareAndSwapInt32(&evicteeEntryPtr.count, oldCount, updatedCount) {
+				break
 			}
-		} else if updatedCount == 0 {
+		}
+
+		if updatedCount == 0 {
 			c.lock.Lock()
-			// TODO check count condition on entry again!!
+			// do we need to check count condition on entry again?
 
 			delete(c.current, evictee)
 			delete(c.codemap, evicteeCode)
 
 			c.lock.Unlock()
 
-			c.evict(evictee)
-		} else {
-			// could this happen normally?
-			panic("evictee count was 0")
+			if c.evict != nil {
+				c.evict(evictee)
+			}
+		} else if updatedCount < 0 {
+			// XXX could this happen normally?
+			// panic("evictee count was 0")
+			return
 		}
-
 	}
-
 }

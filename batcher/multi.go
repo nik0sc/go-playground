@@ -3,15 +3,26 @@ package batcher
 import (
 	"sync"
 	"time"
+
+	"go.lepak.sg/playground/slidingwindow"
 )
 
-type Keyer interface {
-	Key() string
+// Keyer is the interface that items must implement
+// to be aggregated into groups.
+type Keyer[K comparable] interface {
+	Key() K
 }
 
-type Multi[T Keyer] struct {
-	active map[string]chan T
+type window[K comparable] interface {
+	Observe(K)
+	Lifetime() int
+}
+
+type multi[T Keyer[K], K comparable] struct {
+	active map[K]chan T
+	wg     *sync.WaitGroup
 	subWg  sync.WaitGroup
+	window window[K]
 
 	in        <-chan T
 	out       chan<- []T
@@ -21,12 +32,13 @@ type Multi[T Keyer] struct {
 	subInCap  int
 }
 
-func (m *Multi[T]) accept(wg *sync.WaitGroup) {
+func (m *multi[T, K]) accept() {
 	for item := range m.in {
 		key := item.Key()
 
 		dest, ok := m.active[key]
 		if !ok {
+			println("create: key:", key, "lifetime:", m.window.Lifetime())
 			dest = make(chan T, m.subInCap)
 			m.subWg.Add(1)
 			go func() {
@@ -37,23 +49,38 @@ func (m *Multi[T]) accept(wg *sync.WaitGroup) {
 		}
 
 		dest <- item
+		m.window.Observe(key)
 	}
 
 	// shutdown
+	// TODO: The order may be important here...
 	for _, dest := range m.active {
+		print("")
 		close(dest)
 	}
 
 	m.subWg.Wait()
-	wg.Done()
+	close(m.out)
+	m.wg.Done()
 }
 
-func StartMulti[T Keyer](
+func (m *multi[T, K]) cleanup(key K) {
+	println("evict: key:", key, "lifetime:", m.window.Lifetime())
+	ch := m.active[key]
+	if ch != nil {
+		close(ch)
+	}
+	delete(m.active, key)
+}
+
+func StartMulti[T Keyer[K], K comparable](
 	in <-chan T, out chan<- []T, threshold int, interval time.Duration,
-	prealloc bool, subInCap int, wg *sync.WaitGroup,
+	prealloc bool, subInCap, keepAliveFor, keyCardinalityHint int,
+	wg *sync.WaitGroup,
 ) {
-	m := &Multi[T]{
-		active:    make(map[string]chan T),
+	m := &multi[T, K]{
+		active:    make(map[K]chan T),
+		wg:        wg,
 		in:        in,
 		out:       out,
 		threshold: threshold,
@@ -61,7 +88,8 @@ func StartMulti[T Keyer](
 		prealloc:  prealloc,
 		subInCap:  subInCap,
 	}
+	m.window = slidingwindow.NewCounter(keepAliveFor, keyCardinalityHint, m.cleanup)
 
 	wg.Add(1)
-	go m.accept(wg)
+	go m.accept()
 }
