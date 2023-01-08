@@ -31,7 +31,11 @@ func main() {
 
 	var wg sync.WaitGroup
 
-	batcher.Start(in, out, *batchSize, *batchTime, *prealloc, &wg)
+	batcher.Start(in, out, &wg, batcher.Params{
+		Threshold: *batchSize,
+		Interval:  *batchTime,
+		Prealloc:  *prealloc,
+	})
 
 	go func() {
 		for i := 0; i < *countTo; i++ {

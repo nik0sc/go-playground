@@ -14,17 +14,22 @@ import (
 	"time"
 )
 
+type Params struct {
+	Threshold int
+	Interval  time.Duration
+	Prealloc  bool
+}
+
 // Start starts a batcher. Start increments wg for you, and the batcher
 // exits after in is closed. Otherwise the remaining parameters are the
 // same as in batcher.Batch.
 func Start[T any](
-	in <-chan T, out chan<- []T, threshold int, interval time.Duration,
-	prealloc bool, wg *sync.WaitGroup,
+	in <-chan T, out chan<- []T, wg *sync.WaitGroup, params Params,
 ) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		Batch(in, out, threshold, interval, prealloc)
+		Batch(in, out, params)
 	}()
 }
 
@@ -34,21 +39,20 @@ func Start[T any](
 // in is closed, and it will close out as well (i.e. channel closing
 // propagates through Batch).
 //
-// If prealloc is true, the batch slice is allocated with the threshold
-// as capacity. If you expect that the timeout won't be reached frequently,
-// this could reduce unnecessary reallocations. On the other hand, if the
-// timeout is actually reached frequently, setting this to false would
-// reduce unnecessary memory usage.
+// If params.Prealloc is true, the batch slice is allocated with the
+// threshold as capacity. If you expect that the timeout won't be
+// reached frequently, this could reduce unnecessary reallocations.
+// On the other hand, if the timeout is actually reached frequently,
+// setting this to false would reduce unnecessary memory usage.
 func Batch[T any](
-	in <-chan T, out chan<- []T, threshold int, interval time.Duration,
-	prealloc bool,
+	in <-chan T, out chan<- []T, params Params,
 ) {
-	batch(in, out, threshold, interval, prealloc, true)
+	batch(in, out, params, true)
 }
 
 func batch[T any](
-	in <-chan T, out chan<- []T, threshold int, interval time.Duration,
-	prealloc, shouldClose bool,
+	in <-chan T, out chan<- []T, params Params,
+	shouldClose bool,
 ) {
 	var t *time.Timer
 
@@ -64,19 +68,24 @@ func batch[T any](
 		}
 
 		var slice []T
-		if prealloc {
-			slice = make([]T, 1, threshold)
+		if params.Prealloc {
+			slice = make([]T, 1, params.Threshold)
 		} else {
 			slice = make([]T, 1)
 		}
 		slice[0] = item
 
+		if params.Threshold <= 1 {
+			out <- slice
+			continue
+		}
+
 		// this is a one-shot timer, not a Ticker; it's easier to reason
 		// about, since we control its lifetime explicitly
 		if t == nil {
-			t = time.NewTimer(interval)
+			t = time.NewTimer(params.Interval)
 		} else {
-			t.Reset(interval)
+			t.Reset(params.Interval)
 		}
 
 		running := true
@@ -94,7 +103,7 @@ func batch[T any](
 				}
 
 				slice = append(slice, item)
-				if len(slice) >= threshold {
+				if len(slice) >= params.Threshold {
 					if !t.Stop() {
 						<-t.C
 					}

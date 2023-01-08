@@ -41,7 +41,10 @@ func NewBatched[T any](
 		d.c <- progress
 	})
 
-	batcher.Start(d.c, d.cbatch, threshold, interval, false, &d.wg)
+	batcher.Start(d.c, d.cbatch, &d.wg, batcher.Params{
+		Threshold: threshold,
+		Interval:  interval,
+	})
 
 	d.wg.Add(1)
 	go d.watch()

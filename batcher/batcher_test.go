@@ -15,9 +15,7 @@ func TestBatch(t *testing.T) {
 		name               string
 		inCap, outCap      int
 		before, concurrent func(chan int)
-		threshold          int
-		interval           time.Duration
-		prealloc           bool
+		params             Params
 		drain              [][]int
 	}{
 		{
@@ -27,8 +25,10 @@ func TestBatch(t *testing.T) {
 			concurrent: func(ch chan int) {
 				close(ch)
 			},
-			threshold: 10,
-			interval:  time.Second,
+			params: Params{
+				Threshold: 10,
+				Interval:  time.Second,
+			},
 		},
 		{
 			name:   "none with delay",
@@ -38,8 +38,10 @@ func TestBatch(t *testing.T) {
 				time.Sleep(time.Second)
 				close(ch)
 			},
-			threshold: 10,
-			interval:  time.Millisecond,
+			params: Params{
+				Threshold: 10,
+				Interval:  time.Millisecond,
+			},
 		},
 		{
 			name:   "one no delay",
@@ -49,9 +51,11 @@ func TestBatch(t *testing.T) {
 				ch <- 1
 				close(ch)
 			},
-			threshold: 10,
-			interval:  time.Second,
-			drain:     [][]int{{1}},
+			params: Params{
+				Threshold: 10,
+				Interval:  time.Second,
+			},
+			drain: [][]int{{1}},
 		},
 		{
 			name:   "two with delay between",
@@ -63,9 +67,11 @@ func TestBatch(t *testing.T) {
 				ch <- 2
 				close(ch)
 			},
-			threshold: 10,
-			interval:  time.Millisecond,
-			drain:     [][]int{{1}, {2}},
+			params: Params{
+				Threshold: 10,
+				Interval:  time.Millisecond,
+			},
+			drain: [][]int{{1}, {2}},
 		},
 		{
 			name:   "no delay",
@@ -77,8 +83,10 @@ func TestBatch(t *testing.T) {
 				}
 				close(ch)
 			},
-			threshold: 3,
-			interval:  time.Second,
+			params: Params{
+				Threshold: 3,
+				Interval:  time.Second,
+			},
 			drain: [][]int{
 				{0, 1, 2},
 				{3, 4, 5},
@@ -99,13 +107,31 @@ func TestBatch(t *testing.T) {
 				}
 				close(ch)
 			},
-			threshold: 3,
-			interval:  time.Second,
+			params: Params{
+				Threshold: 3,
+				Interval:  time.Second,
+			},
 			drain: [][]int{
 				{0, 1, 2},
 				{3, 4},
 				{5, 6, 7},
 				{8, 9},
+			},
+		},
+		{
+			name:   "degenerate",
+			inCap:  3,
+			outCap: 3,
+			concurrent: func(ch chan int) {
+				for i := 0; i < 3; i++ {
+					ch <- i
+				}
+				close(ch)
+			},
+			drain: [][]int{
+				{0},
+				{1},
+				{2},
 			},
 		},
 	}
@@ -123,7 +149,7 @@ func TestBatch(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				Batch(in, out, test.threshold, test.interval, test.prealloc)
+				Batch(in, out, test.params)
 			}()
 
 			if test.concurrent != nil {
