@@ -27,7 +27,7 @@ func stringKeyer(str string) char {
 	return char(str[0])
 }
 
-func TestStartMulti(t *testing.T) {
+func TestStartGrouped(t *testing.T) {
 	const (
 		cardinality = 0    // 100
 		times       = 1000 // detect flakiness
