@@ -25,7 +25,6 @@ var (
 	// Static type assertions
 	_ implInt = (*Counter[int])(nil)
 	_ implInt = (*LockedCounter[int])(nil)
-	_ implInt = (*ConcurrentCounter[int])(nil)
 
 	impls = []testSpec{
 		{
@@ -41,96 +40,8 @@ var (
 				return NewLocked(NewCounter(size, cardinalityHint, onEvict))
 			},
 		},
-		{
-			name:       "concurrent",
-			threadsafe: true,
-			new: func(size, cardinalityHint int, onEvict func(int)) implInt {
-				return NewConcurrentCounter(size, cardinalityHint, onEvict)
-			},
-		},
 	}
 )
-
-func TestConcurrentCounter(t *testing.T) {
-	evicted := -1
-	c := NewConcurrentCounter(4, 0, func(value int) {
-		evicted = value
-	})
-
-	c.Observe(1)
-	c.Observe(2)
-	c.Observe(3)
-	c.Observe(3)
-
-	t.Logf("%+v", c)
-	assert.Equal(t, 1, c.Get(1))
-	assert.Equal(t, 1, c.Get(2))
-	assert.Equal(t, 2, c.Get(3))
-	assert.Equal(t, 0, c.Get(4))
-	assert.Equal(t, map[int]int{1: 1, 2: 1, 3: 2}, c.GetAll())
-	assert.Equal(t, 4, c.Lifetime())
-	assert.Equal(t, -1, evicted)
-
-	c.Observe(4)
-	t.Logf("%+v", c)
-	assert.Equal(t, 0, c.Get(1))
-	assert.Equal(t, 1, c.Get(2))
-	assert.Equal(t, 2, c.Get(3))
-	assert.Equal(t, 1, c.Get(4))
-	assert.Equal(t, map[int]int{2: 1, 3: 2, 4: 1}, c.GetAll())
-	assert.Equal(t, 5, c.Lifetime())
-	assert.Equal(t, 1, evicted)
-	evicted = -1
-
-	c.Observe(5)
-	t.Logf("%+v", c)
-	assert.Equal(t, 0, c.Get(2))
-	assert.Equal(t, 2, c.Get(3))
-	assert.Equal(t, 1, c.Get(4))
-	assert.Equal(t, 1, c.Get(5))
-	assert.Equal(t, map[int]int{3: 2, 4: 1, 5: 1}, c.GetAll())
-	assert.Equal(t, 6, c.Lifetime())
-	assert.Equal(t, 2, evicted)
-	evicted = -1
-
-	c.Observe(5)
-	t.Logf("%+v", c)
-	assert.Equal(t, 1, c.Get(3))
-	assert.Equal(t, 1, c.Get(4))
-	assert.Equal(t, 2, c.Get(5))
-	assert.Equal(t, map[int]int{3: 1, 4: 1, 5: 2}, c.GetAll())
-	assert.Equal(t, 7, c.Lifetime())
-	assert.Equal(t, -1, evicted)
-
-	c.Observe(5)
-	t.Logf("%+v", c)
-	assert.Equal(t, 0, c.Get(3))
-	assert.Equal(t, 1, c.Get(4))
-	assert.Equal(t, 3, c.Get(5))
-	assert.Equal(t, map[int]int{4: 1, 5: 3}, c.GetAll())
-	assert.Equal(t, 8, c.Lifetime())
-	assert.Equal(t, 3, evicted)
-	evicted = -1
-
-	c.Observe(5)
-	t.Logf("%+v", c)
-	assert.Equal(t, 0, c.Get(3))
-	assert.Equal(t, 0, c.Get(4))
-	assert.Equal(t, 4, c.Get(5))
-	assert.Equal(t, map[int]int{5: 4}, c.GetAll())
-	assert.Equal(t, 9, c.Lifetime())
-	assert.Equal(t, 4, evicted)
-	evicted = -1
-
-	c.Observe(5)
-	t.Logf("%+v", c)
-	assert.Equal(t, 0, c.Get(3))
-	assert.Equal(t, 0, c.Get(4))
-	assert.Equal(t, 4, c.Get(5))
-	assert.Equal(t, map[int]int{5: 4}, c.GetAll())
-	assert.Equal(t, 10, c.Lifetime())
-	assert.Equal(t, -1, evicted)
-}
 
 func TestConcurrentObserveInterleaved(t *testing.T) {
 	for _, tt := range impls {
@@ -194,9 +105,15 @@ func TestConcurrentObserveInterleaved(t *testing.T) {
 			wg.Wait()
 
 			t.Logf("%+v", c)
-			t.Log(c.GetAll())
-			t.Log(c.Lifetime())
 
+			getAll := c.GetAll()
+			sum := 0
+			for k, v := range getAll {
+				assert.NotEqualf(t, 0, v, "k=%d v=0", k)
+				sum += v
+			}
+
+			assert.Equal(t, 10, sum)
 		})
 	}
 
