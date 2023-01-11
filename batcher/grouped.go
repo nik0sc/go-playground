@@ -71,35 +71,44 @@ const (
 	stateDeleted
 )
 
-type record[T any] struct {
+type sub[T any, K comparable] struct {
+	key   K
 	ch    chan T         // to sub-batcher
 	wg    sync.WaitGroup // sub-batcher decrements this
 	state uint64
 }
 
-type evictRec[T any, K comparable] struct {
-	rec *record[T] // avoids another map lock and access in cleanup
-	key K
-}
-
 type grouped[T any, K comparable] struct {
-	active  map[K]*record[T]
-	maplock sync.Mutex
-	wg      *sync.WaitGroup
-	subWg   sync.WaitGroup
+	active map[K]*sub[T, K]
 
-	window window[K]
+	// window records uses of sub-batchers
+	// so that inactive ones can be stopped
+	// if lifetime = 0, this is a dummy
+	window window[*sub[T, K]]
 
-	in        <-chan T
-	out       chan<- []T
+	in  <-chan T
+	out chan<- []T
+
+	// incremented by StartGrouped
+	// and decremented when accept/cleanup exit
+	wg *sync.WaitGroup
+
 	subParams Params
 	subChCap  int
 
 	keyer func(T) K
 
-	evictq chan evictRec[T, K]
+	// evictq connects the window and the cleanup goroutine
+	// if lifetime = 0, since window does nothing,
+	// evictq will be nil
+	evictq chan *sub[T, K]
 
 	debug io.Writer
+
+	maplock sync.Mutex // protects active
+	// incremented when creating a new sub-batcher
+	// and decremented when one exits
+	subWg sync.WaitGroup
 }
 
 func (m *grouped[T, K]) accept() {
@@ -107,33 +116,43 @@ func (m *grouped[T, K]) accept() {
 		m.acceptOne(item)
 	}
 
-	// shutdown
+	// shutdown sub-batchers in any order
 	for _, dest := range m.active {
 		close(dest.ch)
 	}
 
+	// shutdown cleanup
+	// if lifetime = 0, evictq is nil, and
+	// cleanup was never started
 	if m.evictq != nil {
 		close(m.evictq)
 	}
 
+	// once all sub-batchers have exited,
+	// close m.out on their behalf
 	m.subWg.Wait()
 	close(m.out)
+
+	// cleanup will decrement m.wg as well
 	m.wg.Done()
 }
 
 func (m *grouped[T, K]) acceptOne(item T) {
 	key := m.keyer(item)
-	var oldRec *record[T]
+	// later on, if this is not nil,
+	// we have to wait for this sub-batcher
+	// to exit before creating its replacement
+	var oldRec *sub[T, K]
 
 	m.maplock.Lock()
-	rec, ok := m.active[key]
+	subRec, ok := m.active[key]
 	m.maplock.Unlock()
 
-	// this would be set in cleanup2 - which runs in the same goroutine
-	// as accept - so there is no race
-	if ok && atomic.LoadUint64(&rec.state) >= stateClosing {
+	// this would have become true in enqueueForCleanup,
+	// which runs in this goroutine too, so there is no race
+	if ok && atomic.LoadUint64(&subRec.state) >= stateClosing {
 		ok = false
-		oldRec = rec // tells the if !ok {} block to wait for state to change
+		oldRec = subRec
 	}
 
 	if !ok {
@@ -142,55 +161,64 @@ func (m *grouped[T, K]) acceptOne(item T) {
 				key, m.window.Lifetime())
 		}
 
-		rec = &record[T]{
-			ch: make(chan T, m.subChCap),
+		subRec = &sub[T, K]{
+			key: key,
+			ch:  make(chan T, m.subChCap),
 		}
-		rec.wg.Add(1)
+		subRec.wg.Add(1)
 		m.subWg.Add(1)
-		go func() {
-			defer rec.wg.Done()
-			defer m.subWg.Done()
-			batch(rec.ch, m.out, m.subParams, false)
-		}()
+		go m.runSub(subRec)
 
 		// spinwait if needed
 		if oldRec != nil {
 			oldRec.wg.Wait() // but don't spin for too long
 			for atomic.LoadUint64(&oldRec.state) != stateDeleted {
-				// odds are we won't spend too long in here
+				// probably won't spend too long in here
 				// accept isn't holding the lock
 				// so cleanup can grab it immediately
 				runtime.Gosched()
 			}
+			// once here, cleanup has removed the old
+			// sub-batcher from m.active, so accept can
+			// go ahead and add the new sub-batcher
 		}
 
 		m.maplock.Lock()
-		m.active[key] = rec
+		m.active[key] = subRec
 		m.maplock.Unlock()
 	}
 
-	rec.ch <- item
-	m.window.Observe(key)
+	subRec.ch <- item
+	// will trigger eviction via enqueueForCleanup if needed
+	m.window.Observe(subRec)
 }
 
-func (m *grouped[T, K]) enqueueForCleanup(key K) {
+func (m *grouped[T, K]) runSub(subRec *sub[T, K]) {
+	defer subRec.wg.Done()
+	defer m.subWg.Done()
+	// shouldClose = false, because it is not
+	// the only one sending on m.out
+	batch(subRec.ch, m.out, m.subParams, false)
+}
+
+func (m *grouped[T, K]) enqueueForCleanup(rec *sub[T, K]) {
 	if m.debug != nil {
 		fmt.Fprintf(m.debug, "evictq: key=%v lifetime=%d\n",
-			key, m.window.Lifetime())
+			rec.key, m.window.Lifetime())
 	}
 
-	m.maplock.Lock()
-	rec := m.active[key]
-	m.maplock.Unlock()
-	if rec != nil {
-		if !atomic.CompareAndSwapUint64(&rec.state, stateRunning, stateClosing) {
-			panic("rec.state != stateRunning")
-		}
-		m.evictq <- evictRec[T, K]{
-			rec: rec,
-			key: key,
-		}
+	if rec == nil {
+		panic("rec nil but key still pending cleanup")
 	}
+
+	if !atomic.CompareAndSwapUint64(&rec.state, stateRunning, stateClosing) {
+		panic("state != stateRunning")
+	}
+
+	close(rec.ch)
+	m.evictq <- rec
+	// What happens if we skip evictq and start a goroutine here
+	// to wait for rec.wg and remove it from m.active directly?
 }
 
 func (m *grouped[T, K]) cleanup() {
@@ -201,11 +229,10 @@ func (m *grouped[T, K]) cleanup() {
 			// not safe to read window lifetime
 		}
 
-		close(evictee.rec.ch)
-		evictee.rec.wg.Wait()
+		evictee.wg.Wait()
 
 		m.maplock.Lock()
-		if evictee.rec != m.active[evictee.key] {
+		if evictee != m.active[evictee.key] {
 			panic("map changed underneath us")
 		}
 
@@ -213,14 +240,27 @@ func (m *grouped[T, K]) cleanup() {
 		m.maplock.Unlock()
 
 		if !atomic.CompareAndSwapUint64(
-			&evictee.rec.state, stateClosing, stateDeleted) {
-			panic("rec.state != stateClosing")
+			&evictee.state, stateClosing, stateDeleted) {
+			panic("state != stateClosing")
 		}
 	}
 
 	m.wg.Done()
 }
 
+// StartGrouped starts a grouping batcher. Every item received on the
+// in channel has a group, which is determined by a custom keyer function.
+// The grouping batcher works by creating sub-batchers for each unique
+// item key observed. StartGrouped increments wg for you, and the batcher
+// exits along with all started sub-batchers after in is closed.
+// It will also close out for you.
+//
+// The keyer function determines the group of an item. It should be a
+// pure function, i.e. it should always return the same K for any given T.
+//
+// GroupedParams embeds Params, which controls the batching behaviour
+// for each group. GroupedParams also introduces new parameters specific
+// to group control, e.g. for the cleanup of idle sub-batchers.
 func StartGrouped[T any, K comparable](
 	in <-chan T, out chan<- []T, keyer func(T) K, wg *sync.WaitGroup,
 	params GroupedParams,
@@ -235,8 +275,17 @@ func StartGrouped[T any, K comparable](
 		params.SubChannelCap = 0
 	}
 
+	var mapsize int
+	if params.Lifetime > 0 {
+		mapsize = params.Lifetime
+	} else if params.KeyCardinalityHint > 0 {
+		mapsize = params.KeyCardinalityHint
+	} else {
+		mapsize = 100 // just a guess
+	}
+
 	m := &grouped[T, K]{
-		active:    make(map[K]*record[T]),
+		active:    make(map[K]*sub[T, K], mapsize),
 		wg:        wg,
 		in:        in,
 		out:       out,
@@ -247,13 +296,16 @@ func StartGrouped[T any, K comparable](
 	}
 
 	if params.Lifetime > 0 {
-		m.evictq = make(chan evictRec[T, K], params.Lifetime)
+		// TODO: This chan can be smaller, but by how much?
+		m.evictq = make(chan *sub[T, K], params.Lifetime)
+		// no need for the locked counter, since
+		// Observe is only called serially from acceptOne
 		m.window = slidingwindow.NewCounter(
 			params.Lifetime, params.KeyCardinalityHint, m.enqueueForCleanup)
 		wg.Add(1)
 		go m.cleanup()
 	} else {
-		m.window = noopWindow[K]{}
+		m.window = noopWindow[*sub[T, K]]{}
 	}
 
 	wg.Add(1)
