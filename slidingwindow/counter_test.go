@@ -84,6 +84,17 @@ func TestCounter(t *testing.T) {
 	assert.Equal(t, -1, evicted)
 }
 
+func TestCounter_NoSpuriousEviction(t *testing.T) {
+	c := NewCounter(2, 0, func(value int) {
+		t.Fatalf("unexpected eviction of %d", value)
+	})
+
+	c.Observe(1)
+	c.Observe(2)
+	c.Observe(1)
+	c.Observe(2)
+}
+
 const (
 	seed = 58913
 )

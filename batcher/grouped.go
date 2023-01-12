@@ -255,6 +255,19 @@ func (m *grouped[T, K]) cleanup() {
 // exits along with all started sub-batchers after in is closed.
 // It will also close out for you.
 //
+// Given keyer = func(i int) int { return i % 3 },
+// and the sequence sent on the in channel {1 2 3 4 5 6 7 8 9 <close>},
+// 3 groups will be received from the out channel in any order before
+// it is closed: {1 4 7}, {2 5 8} and {3 6 9}.
+//
+// Within the same group, items are output in the same order as they are
+// received, even if they are in different batches. This applies
+// regardless of how many other items are received between items in the
+// same group.
+//
+// Note that order is not guaranteed across distinct groups. In the
+// example above, {1 4 7} may appear after {2 5 8}.
+//
 // The keyer function determines the group of an item. It should be a
 // pure function, i.e. it should always return the same K for any given T.
 //

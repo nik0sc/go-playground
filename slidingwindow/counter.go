@@ -131,19 +131,19 @@ func (c *Counter[T]) Lifetime() int {
 func (c *Counter[T]) Observe(value T) {
 	size := len(c.window)
 
-	needEvict := c.lifetime >= size
-	if needEvict {
+	if c.lifetime >= size {
 		evictee := c.window[c.head]
+		needEvict := evictee != value
 		updatedCount := c.current[evictee] - 1
 
-		if updatedCount > 0 {
+		if updatedCount > 0 || !needEvict {
 			c.current[evictee] = updatedCount
-		} else if updatedCount == 0 {
+		} else if updatedCount == 0 && needEvict {
 			delete(c.current, evictee)
 			if c.evict != nil {
 				c.evict(evictee)
 			}
-		} else {
+		} else if updatedCount < 0 {
 			// this implies that either evictee wasn't in current
 			// or evictee was not removed from current when it hit 0 previously
 			// which are both bad
