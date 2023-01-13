@@ -60,6 +60,12 @@ func (a *stringAcceptor) Close() {
 	}
 }
 
+type panicKeyer struct{}
+
+func (panicKeyer) Key() string {
+	panic("oops")
+}
+
 type errorAcceptor struct {
 	t *testing.T
 }
@@ -292,4 +298,11 @@ func TestLazy_AcceptError(t *testing.T) {
 		return &errorAcceptor{t}, nil
 	}, 1, 1)
 	assert.ErrorContains(t, l.Accept(&stringKeyer{"a"}), "oops")
+}
+
+func TestLazy_KeyError(t *testing.T) {
+	l := NewLazy(func(s string) (Acceptor, error) {
+		return &stringAcceptor{}, nil
+	}, 1, 1)
+	assert.ErrorContains(t, l.Accept(panicKeyer{}), "oops")
 }

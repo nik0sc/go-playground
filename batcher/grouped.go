@@ -72,9 +72,11 @@ const (
 )
 
 type sub[T any, K comparable] struct {
-	key   K
-	ch    chan T         // to sub-batcher
-	wg    sync.WaitGroup // sub-batcher decrements this
+	key K
+	ch  chan T         // to sub-batcher
+	wg  sync.WaitGroup // sub-batcher decrements this
+	// running -> closing when evicted from window
+	// closing -> deleted when removed from active map
 	state uint64
 }
 
@@ -261,15 +263,17 @@ func (m *grouped[T, K]) cleanup() {
 // it is closed: {1 4 7}, {2 5 8} and {3 6 9}.
 //
 // Within the same group, items are output in the same order as they are
-// received, even if they are in different batches. This applies
-// regardless of how many other items are received between items in the
-// same group.
+// received, even if they are in different batches. Items in the same
+// group may end up in different batches because the sub-batch threshold
+// or interval was exceeded.
 //
 // Note that order is not guaranteed across distinct groups. In the
 // example above, {1 4 7} may appear after {2 5 8}.
 //
 // The keyer function determines the group of an item. It should be a
 // pure function, i.e. it should always return the same K for any given T.
+// keyer must not panic, so it should handle edge cases like nil pointers
+// and short slices gracefully.
 //
 // GroupedParams embeds Params, which controls the batching behaviour
 // for each group. GroupedParams also introduces new parameters specific

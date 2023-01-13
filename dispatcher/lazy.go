@@ -13,6 +13,8 @@ const (
 )
 
 // Keyer is the interface of items that Lazy accepts.
+// Key should be a pure function, i.e. it should always return
+// the same key for the same item, regardless of state.
 type Keyer interface {
 	Key() string
 }
@@ -20,6 +22,7 @@ type Keyer interface {
 // Acceptor is the interface that Lazy will route Keyers to.
 type Acceptor interface {
 	Accept(Keyer) error
+	// Close is called when the Acceptor is no longer required.
 	Close()
 }
 
@@ -50,17 +53,19 @@ type Lazy struct {
 // It should be possible to chain Lazys together
 var _ Acceptor = (*Lazy)(nil)
 
-// NewLazy creates a lazy dispatcher.
+// NewLazy creates a lazy dispatcher. It accepts items, obtains a key
+// for each item by calling its Key method, then sends it to the Acceptor
+// for that key. If an Acceptor does not exist in Lazy yet, it is created
+// using the factory function. Once an Acceptor has been idle for
+// windowSize number of items, it is closed and removed from Lazy.
 //
-// factory is the function called to create a new Acceptor for
-// a given key. windowSize is the number of items accepted without using
-// an Acceptor before it is considered idle and closed. keyCardinality
-// is a guess for how many unique keys there are (it may be 0).
+// factory takes the key name and returns either the new Acceptor
+// or an error. The error is returned to the caller of Lazy.Accept.
+// keyCardinality is a guess for how many unique keys there are;
+// it may be 0, in which case a default is used.
 //
-// Note that factory may be called from multiple goroutines at once.
-// Also, an Acceptor may be created and then closed without ever
-// being used.
-// Once an Acceptor is no longer needed, its Close method is called.
+// factory may be called from multiple goroutines at once. Also, Lazy
+// may create and then close an Acceptor without ever using it.
 func NewLazy(
 	factory func(string) (Acceptor, error), windowSize, keyCardinality int,
 ) *Lazy {
@@ -99,7 +104,10 @@ func (ld *Lazy) newAcceptor(key string) (ac Acceptor, err error) {
 // Accept accepts a keyable item for dispatching.
 // Any error from the acceptor is returned.
 func (ld *Lazy) Accept(item Keyer) error {
-	key := item.Key()
+	key, err := key(item)
+	if err != nil {
+		return err
+	}
 
 	ld.lock.RLock()
 	if ld.window == nil {
@@ -152,7 +160,7 @@ func (ld *Lazy) Accept(item Keyer) error {
 	}
 
 	ld.window.Observe(key)
-	err := dest.acceptor.Accept(item)
+	err = dest.acceptor.Accept(item)
 	refcount := atomic.AddInt64(&dest.refCount, -1)
 	if refcount < 0 {
 		panic(fmt.Sprintf(
@@ -185,10 +193,10 @@ func (ld *Lazy) cleanup(key string) {
 	if refcount > 0 {
 		ld.lock.Unlock()
 		// This is tricky: the key has already left the window
-		// but the acceptor should not be removed from ld.active.
-		// Trust that the other goroutine will Observe this key also,
-		// therefore putting the key back in the window.
-		// print("warning: refcount was not zero", dest)
+		// but the acceptor should not be removed from ld.active,
+		// because another goroutine has taken this acceptor from
+		// ld.active in the meantime. That goroutine will Observe
+		// this key also, therefore putting the key back in the window.
 		return
 	} else if refcount < 0 {
 		panic(fmt.Sprintf(
@@ -201,4 +209,19 @@ func (ld *Lazy) cleanup(key string) {
 	if dest != nil {
 		dest.acceptor.Close()
 	}
+}
+
+func key(item Keyer) (k string, err error) {
+	defer func() {
+		switch r := recover().(type) {
+		case error:
+			err = fmt.Errorf("keyer paniced: %w", r)
+		case nil:
+			return
+		default:
+			err = fmt.Errorf("keyer paniced: %v", r)
+		}
+	}()
+	k = item.Key()
+	return
 }
