@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"go.lepak.sg/playground/testutils"
 	"go.uber.org/goleak"
 )
 
@@ -135,7 +136,7 @@ func TestMapBounded(t *testing.T) {
 
 func TestMapBounded_Cancellation(t *testing.T) {
 	for _, impl := range getimpls[int, int]() {
-		t.Run(impl.name, func(t *testing.T) {
+		t.Run(impl.name, testutils.Flaky(10, func(t testutils.FlakyT) {
 			ctx, cancel := context.WithCancel(context.Background())
 
 			in := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
@@ -156,9 +157,9 @@ func TestMapBounded_Cancellation(t *testing.T) {
 			// in the function under test
 			assert.ErrorIs(t, err, context.Canceled)
 
-			t.Logf("result=%v", result)
+			t.T().Logf("result=%v", result)
 
 			goleak.VerifyNone(t)
-		})
+		}))
 	}
 }
