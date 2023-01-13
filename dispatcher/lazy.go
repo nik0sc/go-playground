@@ -51,6 +51,7 @@ type Lazy struct {
 var _ Acceptor = (*Lazy)(nil)
 
 // NewLazy creates a lazy dispatcher.
+//
 // factory is the function called to create a new Acceptor for
 // a given key. windowSize is the number of items accepted without using
 // an Acceptor before it is considered idle and closed. keyCardinality
@@ -152,10 +153,17 @@ func (ld *Lazy) Accept(item Keyer) error {
 
 	ld.window.Observe(key)
 	err := dest.acceptor.Accept(item)
-	atomic.AddInt64(&dest.refCount, -1)
+	refcount := atomic.AddInt64(&dest.refCount, -1)
+	if refcount < 0 {
+		panic(fmt.Sprintf(
+			"refcount after use < 0, key=%q refcount=%d",
+			key, refcount))
+	}
 	return err
 }
 
+// Close closes the dispatcher. Accept must not be called
+// after Close.
 func (ld *Lazy) Close() {
 	ld.lock.Lock()
 	defer ld.lock.Unlock()
@@ -173,7 +181,8 @@ func (ld *Lazy) cleanup(key string) {
 		ld.lock.Unlock()
 		panic("key already removed")
 	}
-	if atomic.LoadInt64(&dest.refCount) != 0 {
+	refcount := atomic.LoadInt64(&dest.refCount)
+	if refcount > 0 {
 		ld.lock.Unlock()
 		// This is tricky: the key has already left the window
 		// but the acceptor should not be removed from ld.active.
@@ -181,6 +190,10 @@ func (ld *Lazy) cleanup(key string) {
 		// therefore putting the key back in the window.
 		// print("warning: refcount was not zero", dest)
 		return
+	} else if refcount < 0 {
+		panic(fmt.Sprintf(
+			"refcount at cleanup < 0, key=%q refcount=%d",
+			key, refcount))
 	}
 	delete(ld.active, key)
 	ld.lock.Unlock()

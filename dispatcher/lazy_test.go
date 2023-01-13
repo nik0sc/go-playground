@@ -60,6 +60,18 @@ func (a *stringAcceptor) Close() {
 	}
 }
 
+type errorAcceptor struct {
+	t *testing.T
+}
+
+func (a *errorAcceptor) Accept(item Keyer) error {
+	return errors.New("oops")
+}
+
+func (a *errorAcceptor) Close() {
+	a.t.Fatal("unexpected close")
+}
+
 const (
 	seed = 58913
 )
@@ -190,6 +202,39 @@ func TestLazy(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:           "concurrent create",
+			windowSize:     10,
+			keyCardinality: 10,
+			chanSize:       20,
+			do: func(t *testing.T, l *Lazy) {
+				const goroutines = 10
+				barrier := make(chan struct{})
+				var wg sync.WaitGroup
+				wg.Add(goroutines)
+				for i := 0; i < goroutines; i++ {
+					go func() {
+						<-barrier
+						assert.NoError(t, l.Accept(&stringKeyer{"a"}))
+						wg.Done()
+					}()
+				}
+				close(barrier)
+				wg.Wait()
+			},
+			after: func(t *testing.T, ch chan stringEvent) {
+				events := make([]stringEvent, 0, len(ch))
+				for e := range ch {
+					events = append(events, e)
+				}
+
+				assert.Len(t, events, 10)
+
+				assert.Equal(t, map[stringEvent]int{
+					{id: 1, value: "a"}: 10,
+				}, ctr.Counter(events))
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -226,4 +271,25 @@ func acceptMany(t *testing.T, l *Lazy, s ...string) {
 		l.Accept(&stringKeyer{ss})
 		checkLazy(t, l, ss)
 	}
+}
+
+func TestLazy_FactoryError(t *testing.T) {
+	var l *Lazy
+
+	l = NewLazy(func(s string) (Acceptor, error) {
+		return nil, errors.New("oops")
+	}, 1, 1)
+	assert.ErrorContains(t, l.Accept(&stringKeyer{"a"}), "oops")
+
+	l = NewLazy(func(s string) (Acceptor, error) {
+		panic("oops")
+	}, 1, 1)
+	assert.ErrorContains(t, l.Accept(&stringKeyer{"a"}), "oops")
+}
+
+func TestLazy_AcceptError(t *testing.T) {
+	l := NewLazy(func(s string) (Acceptor, error) {
+		return &errorAcceptor{t}, nil
+	}, 1, 1)
+	assert.ErrorContains(t, l.Accept(&stringKeyer{"a"}), "oops")
 }
