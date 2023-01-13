@@ -41,7 +41,7 @@ type acceptorEntry struct {
 type Lazy struct {
 	active  map[string]*acceptorEntry
 	window  counter
-	factory func(string) Acceptor
+	factory func(string) (Acceptor, error)
 	// protects active and window (the reference to LockedCounter)
 	// not allowed to hold this and then call window methods
 	lock sync.RWMutex
@@ -61,7 +61,7 @@ var _ Acceptor = (*Lazy)(nil)
 // being used.
 // Once an Acceptor is no longer needed, its Close method is called.
 func NewLazy(
-	factory func(string) Acceptor, windowSize, keyCardinality int,
+	factory func(string) (Acceptor, error), windowSize, keyCardinality int,
 ) *Lazy {
 	ld := &Lazy{
 		active:  make(map[string]*acceptorEntry),
@@ -84,12 +84,14 @@ func (ld *Lazy) newAcceptor(key string) (ac Acceptor, err error) {
 		case error:
 			err = fmt.Errorf("factory paniced: %w", r)
 		case nil:
-			return
+			if err != nil {
+				err = fmt.Errorf("factory: %w", err)
+			}
 		default:
 			err = fmt.Errorf("factory paniced: %v", r)
 		}
 	}()
-	ac = ld.factory(key)
+	ac, err = ld.factory(key)
 	return
 }
 

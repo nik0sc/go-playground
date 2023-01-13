@@ -144,7 +144,7 @@ func TestLazy(t *testing.T) {
 				}
 
 				const (
-					goroutines = 3
+					goroutines = 4
 					iterations = 10000
 				)
 
@@ -197,12 +197,12 @@ func TestLazy(t *testing.T) {
 
 			id := new(uint64)
 
-			l := NewLazy(func(s string) Acceptor {
+			l := NewLazy(func(s string) (Acceptor, error) {
 				return &stringAcceptor{
 					t:   t,
 					id:  atomic.AddUint64(id, 1),
 					key: s,
-					ev:  outchan}
+					ev:  outchan}, nil
 			}, tt.windowSize, tt.keyCardinality)
 
 			tt.do(t, l)
