@@ -1,0 +1,12 @@
+apple
+apricot
+avocado
+banana
+blueberry
+blackcurrant
+cherry
+coconut
+cantaloupe
+durian
+date
+dragonfruit
