@@ -9,6 +9,7 @@ type TestT interface {
 	Logf(string, ...any)
 	Error(...any)
 	Errorf(string, ...any) // also used by testify/assert
+	Helper()
 }
 
 // Drain expects to receive data in order from ch, then expects
@@ -17,6 +18,7 @@ type TestT interface {
 // This will not work if the producer is still sending
 // when this is called.
 func Drain[T any](t TestT, data []T, ch <-chan T) {
+	t.Helper()
 	t.Logf("draining: expecting %v", data)
 	for i, datum := range data {
 		select {

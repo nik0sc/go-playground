@@ -15,20 +15,38 @@ type FlakyT interface {
 	// Log(args ...any)
 	// Logf(format string, args ...any)
 
+	originalHelper
 	T() *testing.T
 }
 
+type originalHelper interface {
+	Helper()
+}
+
 type flakyT struct {
-	t          *testing.T
+	t *testing.T
+	// flakyT cannot define its own Helper method
+	// as testing.T.Helper uses a call to runtime.Callers
+	// with hardcoded number of frames to skip, so
+	// it would mark func (ft *flakyT) Helper() as the
+	// helper function and not its caller.
+	// by embedding the original testing.T.Helper() in here
+	// we keep the number of frames the same
+	originalHelper
 	allowed    int
 	lastFailed bool
 }
 
 func (ft *flakyT) decr() bool {
 	ft.lastFailed = true
-	ft.t.Log("test flaked")
 	ft.allowed--
-	return ft.allowed <= 0
+	if ft.allowed > 0 {
+		ft.t.Helper()
+		ft.t.Logf("test flaked, %d more times allowed", ft.allowed)
+		return false
+	} else {
+		return true
+	}
 }
 
 func (ft *flakyT) T() *testing.T {
@@ -36,12 +54,14 @@ func (ft *flakyT) T() *testing.T {
 }
 
 func (ft *flakyT) Errorf(format string, args ...any) {
+	ft.t.Helper()
 	if ft.decr() {
 		ft.t.Errorf(format, args...)
 	}
 }
 
 func (ft *flakyT) Error(args ...any) {
+	ft.t.Helper()
 	if ft.decr() {
 		ft.t.Error(args...)
 	}
@@ -61,6 +81,7 @@ func Flaky(maxTimes int, testFunc func(FlakyT)) func(*testing.T) {
 	return func(t *testing.T) {
 		if ft.t == nil {
 			ft.t = t
+			ft.originalHelper = t
 		}
 		firstRun := true
 		t.Helper()
