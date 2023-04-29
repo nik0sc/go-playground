@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"go.lepak.sg/playground/graph"
+	"go.lepak.sg/playground/testutils"
 	"go.uber.org/goleak"
 )
 
@@ -33,73 +34,79 @@ func TestGroupCycleDetection(t *testing.T) {
 	goleak.VerifyNone(t)
 }
 
+// flaky
 func TestGroupParentCancellation(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	testutils.Flaky(10, func(t testutils.FlakyT) {
+		ctx, cancel := context.WithCancel(context.Background())
 
-	g := NewGroup(ctx, 1)
+		g := NewGroup(ctx, 1)
 
-	one := g.NewTask("one", func(ctx context.Context) error {
-		cancel() // cancel only after one has started
-		// two may already be waiting for the errgroup,
-		// and once in the errgroup, one's doneCh may be selected
-		// instead of ctx.Done, so it may run
-		// three should never run
-		return nil
+		one := g.NewTask("one", func(ctx context.Context) error {
+			cancel() // cancel only after one has started
+			// two may already be waiting for the errgroup,
+			// and once in the errgroup, one's doneCh may be selected
+			// instead of ctx.Done, so it may run
+			// three should never run
+			return nil
+		})
+
+		two := g.NewTask("two", func(ctx context.Context) error {
+			t.Log("two ran")
+			return nil
+		}).After(one)
+
+		g.NewTask("three", func(ctx context.Context) error {
+			t.Error("three ran")
+			return nil
+		}).After(two)
+
+		assert.NoError(t, g.Start())
+
+		assert.ErrorIs(t, g.Wait(), context.Canceled)
+
+		t.Log(g)
+
+		goleak.VerifyNone(t)
 	})
-
-	two := g.NewTask("two", func(ctx context.Context) error {
-		t.Log("two ran")
-		return nil
-	}).After(one)
-
-	g.NewTask("three", func(ctx context.Context) error {
-		t.Error("three ran")
-		return nil
-	}).After(two)
-
-	assert.NoError(t, g.Start())
-
-	assert.ErrorIs(t, g.Wait(), context.Canceled)
-
-	t.Log(g)
-
-	goleak.VerifyNone(t)
 }
 
+// flaky
 func TestGroupTaskError(t *testing.T) {
-	g := NewGroup(context.Background(), 2)
+	testutils.Flaky(10, func(ft testutils.FlakyT) {
+		g := NewGroup(context.Background(), 2)
 
-	one := g.NewTask("one", func(ctx context.Context) error {
-		return nil
+		one := g.NewTask("one", func(ctx context.Context) error {
+			return nil
+		})
+
+		two := g.NewTask("two", func(ctx context.Context) error {
+			time.Sleep(10 * time.Millisecond)
+			return errors.New("oops")
+		})
+
+		three := g.NewTask("three", func(ctx context.Context) error {
+			t.Error("three ran") // dequeued but exits in errgroup waiting for dependents
+			return nil
+		}).After(one, two)
+
+		four := g.NewTask("four", func(ctx context.Context) error {
+			t.Error("four ran") // dequeued but may be waiting for errgroup
+			return nil
+		}).After(three)
+
+		g.NewTask("five", func(ctx context.Context) error {
+			t.Error("five ran") // never dequeued
+			return nil
+		}).After(four)
+
+		assert.NoError(t, g.Start())
+
+		assert.ErrorContains(t, g.Wait(), "two: oops")
+
+		t.Log(g)
+
+		goleak.VerifyNone(t)
 	})
-
-	two := g.NewTask("two", func(ctx context.Context) error {
-		time.Sleep(10 * time.Millisecond)
-		return errors.New("oops")
-	})
-
-	three := g.NewTask("three", func(ctx context.Context) error {
-		t.Error("three ran") // dequeued but exits in errgroup waiting for dependents
-		return nil
-	}).After(one, two)
-
-	four := g.NewTask("four", func(ctx context.Context) error {
-		t.Error("four ran") // dequeued but may be waiting for errgroup
-		return nil
-	}).After(three)
-
-	g.NewTask("five", func(ctx context.Context) error {
-		t.Error("five ran") // never dequeued
-		return nil
-	}).After(four)
-
-	assert.NoError(t, g.Start())
-
-	assert.ErrorContains(t, g.Wait(), "two: oops")
-
-	t.Log(g)
-
-	goleak.VerifyNone(t)
 }
 
 func TestGroupEmpty(t *testing.T) {

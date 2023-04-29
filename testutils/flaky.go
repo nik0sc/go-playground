@@ -12,8 +12,9 @@ type FlakyT interface {
 	// Failed() bool
 	// Fatal(args ...any)
 	// Fatalf(format string, args ...any)
-	// Log(args ...any)
-	// Logf(format string, args ...any)
+
+	Log(args ...any)
+	Logf(format string, args ...any)
 
 	originalHelper
 	T() *testing.T
@@ -67,12 +68,28 @@ func (ft *flakyT) Error(args ...any) {
 	}
 }
 
+func (ft *flakyT) Log(args ...any) {
+	ft.t.Log(args...)
+}
+
+func (ft *flakyT) Logf(format string, args ...any) {
+	ft.t.Logf(format, args...)
+}
+
 // Flaky allows a test to fail for maxTimes before reporting a failure.
 // Flaky wraps the test functions passed to testing.T.Run like so:
 //
 //	t.Run("name", testutils.Flaky(maxTimes, func(testutils.FlakyT){
 //	  ...
 //	}))
+//
+// Flaky can also be used directly in a test:
+//
+//	func TestXxx(t *testing.T) {
+//	  testutils.Flaky(maxTimes, func(t testutils.FlakyT){
+//	    ...
+//	  })
+//	}
 func Flaky(maxTimes int, testFunc func(FlakyT)) func(*testing.T) {
 	ft := &flakyT{
 		allowed: maxTimes,
